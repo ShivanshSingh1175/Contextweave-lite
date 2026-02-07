@@ -1,0 +1,76 @@
+{
+  "name": "contextweave-lite",
+  "displayName": "ContextWeave Lite",
+  "description": "AI-powered code context from Git history",
+  "version": "0.1.0",
+  "publisher": "contextweave",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:contextweave.explainFile"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "contextweave.explainFile",
+        "title": "ContextWeave: Explain this file"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "contextweave",
+          "title": "ContextWeave",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "contextweave": [
+        {
+          "type": "webview",
+          "id": "contextweave.sidebarView",
+          "name": "File Context"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ContextWeave",
+      "properties": {
+        "contextweave.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the ContextWeave backend server"
+        },
+        "contextweave.commitLimit": {
+          "type": "number",
+          "default": 50,
+          "description": "Maximum number of commits to analyze"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.2"
+  }
+}
