@@ -1,19 +1,67 @@
-# Testing Guide for ContextWeave Lite
+# ContextWeave Lite - Testing Guide
 
-## Testing the Backend
+How to test ContextWeave Lite manually and verify it works correctly.
 
-### 1. Health Check
+---
 
+## Testing Overview
+
+ContextWeave Lite testing consists of:
+
+1. **Backend API Testing** - Test FastAPI endpoints
+2. **Git Analysis Testing** - Test Git operations
+3. **LLM Integration Testing** - Test LLM API calls
+4. **VS Code Extension Testing** - Test extension functionality
+5. **End-to-End Testing** - Test complete user workflows
+
+---
+
+## Prerequisites
+
+Before testing, make sure:
+
+- Backend is running: `cd backend && python main.py`
+- Extension is compiled: `cd vscode-extension && npm run compile`
+- You have a Git repository to test with (can use this project)
+- LLM API key is configured in `backend/.env` (optional, can test mock mode)
+
+---
+
+## 1. Backend API Testing
+
+### Test 1.1: Health Check Endpoint
+
+**Purpose:** Verify backend is running and healthy.
+
+**Steps:**
+1. Open browser or use curl:
+   ```bash
+   curl http://localhost:8000/
+   ```
+
+**Expected Result:**
+```json
+{
+  "status": "healthy",
+  "service": "ContextWeave Lite API",
+  "version": "0.1.0"
+}
+```
+
+**Pass Criteria:** Status code 200, JSON response with correct fields.
+
+---
+
+### Test 1.2: Health Check with LLM Status
+
+**Purpose:** Verify LLM configuration status.
+
+**Steps:**
 ```bash
-# Start the backend
-cd backend
-python main.py
-
-# In another terminal or browser, test:
 curl http://localhost:8000/health
 ```
 
-Expected response:
+**Expected Result (with API key):**
 ```json
 {
   "status": "healthy",
@@ -22,312 +70,712 @@ Expected response:
 }
 ```
 
-### 2. Test File Analysis (with curl)
+**Expected Result (without API key):**
+```json
+{
+  "status": "healthy",
+  "llm_configured": false,
+  "version": "0.1.0"
+}
+```
 
+**Pass Criteria:** Status code 200, `llm_configured` matches actual configuration.
+
+---
+
+### Test 1.3: File Analysis Endpoint (Valid Request)
+
+**Purpose:** Test main analysis endpoint with valid inputs.
+
+**Steps:**
 ```bash
-# Create a test request
 curl -X POST http://localhost:8000/context/file \
   -H "Content-Type: application/json" \
   -d '{
-    "repo_path": "/path/to/your/git/repo",
-    "file_path": "/path/to/your/git/repo/some_file.py",
-    "commit_limit": 20
+    "repo_path": "/absolute/path/to/contextweave-lite",
+    "file_path": "/absolute/path/to/contextweave-lite/backend/main.py",
+    "selected_code": null,
+    "commit_limit": 50
   }'
 ```
 
-Replace `/path/to/your/git/repo` with an actual Git repository path.
+**Note:** Replace paths with actual absolute paths on your system.
 
-### 3. Test with Python Script
-
-Create `test_backend.py`:
-
-```python
-import requests
-import json
-
-# Test health endpoint
-response = requests.get("http://localhost:8000/health")
-print("Health check:", response.json())
-
-# Test file analysis
-# Replace these paths with your actual repo and file
-payload = {
-    "repo_path": "/Users/yourname/projects/myrepo",
-    "file_path": "/Users/yourname/projects/myrepo/src/main.py",
-    "commit_limit": 20
+**Expected Result:**
+```json
+{
+  "summary": "This file is the main entry point...",
+  "decisions": [
+    {
+      "title": "...",
+      "description": "...",
+      "commits": ["abc123"]
+    }
+  ],
+  "related_files": [
+    {
+      "path": "backend/git_utils.py",
+      "reason": "..."
+    }
+  ],
+  "weird_code_explanation": null,
+  "metadata": {
+    "commits_analyzed": 10,
+    "llm_model": "llama-3.1-8b-instant",
+    "has_commit_history": true
+  }
 }
+```
 
-response = requests.post(
-    "http://localhost:8000/context/file",
-    json=payload
+**Pass Criteria:**
+- Status code 200
+- All required fields present
+- Summary is 2-3 sentences
+- Decisions have titles, descriptions, and commit hashes
+- Related files have paths and reasons
+
+---
+
+### Test 1.4: File Analysis Endpoint (Invalid Repo)
+
+**Purpose:** Test error handling for invalid repository.
+
+**Steps:**
+```bash
+curl -X POST http://localhost:8000/context/file \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_path": "/nonexistent/path",
+    "file_path": "/nonexistent/path/file.py",
+    "selected_code": null,
+    "commit_limit": 50
+  }'
+```
+
+**Expected Result:**
+```json
+{
+  "detail": "Repository path does not exist: /nonexistent/path"
+}
+```
+
+**Pass Criteria:** Status code 400, clear error message.
+
+---
+
+### Test 1.5: File Analysis Endpoint (Not a Git Repo)
+
+**Purpose:** Test error handling for non-Git directory.
+
+**Steps:**
+1. Create a temporary directory: `mkdir /tmp/not-a-repo`
+2. Create a file: `echo "test" > /tmp/not-a-repo/test.py`
+3. Call API:
+   ```bash
+   curl -X POST http://localhost:8000/context/file \
+     -H "Content-Type: application/json" \
+     -d '{
+       "repo_path": "/tmp/not-a-repo",
+       "file_path": "/tmp/not-a-repo/test.py",
+       "selected_code": null,
+       "commit_limit": 50
+     }'
+   ```
+
+**Expected Result:**
+```json
+{
+  "detail": "Not a valid Git repository: /tmp/not-a-repo"
+}
+```
+
+**Pass Criteria:** Status code 400, clear error message.
+
+---
+
+## 2. Git Analysis Testing
+
+### Test 2.1: Commit History Extraction
+
+**Purpose:** Verify commit history is extracted correctly.
+
+**Steps:**
+1. Open Python REPL:
+   ```bash
+   cd backend
+   python
+   ```
+
+2. Test function:
+   ```python
+   from git_utils import get_commit_history
+   
+   commits = get_commit_history(
+       repo_path="/path/to/contextweave-lite",
+       file_path="/path/to/contextweave-lite/backend/main.py",
+       limit=10
+   )
+   
+   print(f"Found {len(commits)} commits")
+   print(commits[0])  # Print first commit
+   ```
+
+**Expected Result:**
+```python
+Found 10 commits
+{
+  'hash': 'abc123',
+  'full_hash': 'abc123def456...',
+  'author': 'Your Name',
+  'date': '2026-02-07T10:30:00+00:00',
+  'message': 'Initial commit',
+  'lines_changed': 50
+}
+```
+
+**Pass Criteria:**
+- Returns list of commit dicts
+- Each commit has all required fields
+- Commits are sorted by recency (most recent first)
+
+---
+
+### Test 2.2: Import Extraction (Python)
+
+**Purpose:** Verify Python imports are extracted correctly.
+
+**Steps:**
+```python
+from git_utils import extract_imports
+
+code = """
+import os
+import sys
+from pathlib import Path
+from typing import List, Dict
+"""
+
+imports = extract_imports(code, "test.py")
+print(imports)
+```
+
+**Expected Result:**
+```python
+['os.py', 'sys.py', 'pathlib.py', 'typing.py']
+```
+
+**Pass Criteria:** Returns list of imported module paths.
+
+---
+
+### Test 2.3: Import Extraction (JavaScript)
+
+**Purpose:** Verify JavaScript imports are extracted correctly.
+
+**Steps:**
+```python
+from git_utils import extract_imports
+
+code = """
+import React from 'react';
+import { useState } from 'react';
+const axios = require('axios');
+"""
+
+imports = extract_imports(code, "test.js")
+print(imports)
+```
+
+**Expected Result:**
+```python
+['react', 'react', 'axios']
+```
+
+**Pass Criteria:** Returns list of imported modules.
+
+---
+
+### Test 2.4: Co-Changed Files
+
+**Purpose:** Verify co-changed files are detected.
+
+**Steps:**
+```python
+from git_utils import find_co_changed_files
+
+co_changed = find_co_changed_files(
+    repo_path="/path/to/contextweave-lite",
+    relative_path="backend/main.py",
+    limit=100
 )
 
-if response.status_code == 200:
-    result = response.json()
-    print("\nSummary:", result["summary"])
-    print("\nDesign Decisions:")
-    for decision in result["decisions"]:
-        print(f"  - {decision['title']}: {decision['description']}")
-    print("\nRelated Files:")
-    for rf in result["related_files"]:
-        print(f"  - {rf['path']}: {rf['reason']}")
-else:
-    print("Error:", response.status_code, response.text)
+print(f"Found {len(co_changed)} co-changed files")
+print(co_changed[:3])  # Print top 3
 ```
 
-Run it:
-```bash
-python test_backend.py
-```
-
-## Testing the VS Code Extension
-
-### 1. Manual Testing
-
-1. **Open Extension Development Host**
-   - Open `vscode-extension` folder in VS Code
-   - Press `F5`
-   - New VS Code window opens
-
-2. **Test Command Palette**
-   - In the new window, open a Git repository
-   - Open a file with commit history
-   - Press `Ctrl+Shift+P` (or `Cmd+Shift+P`)
-   - Type "ContextWeave"
-   - Select "ContextWeave: Explain this file"
-
-3. **Verify Sidebar**
-   - Sidebar should open automatically
-   - Should show loading spinner
-   - Then show results with three sections
-
-4. **Test Selected Code**
-   - Select 5-10 lines of code
-   - Run command again
-   - Should see "Selected Code Explanation" section
-
-5. **Test Related Files**
-   - Click on a related file link
-   - File should open in editor
-
-### 2. Test Error Handling
-
-**Test: Backend not running**
-1. Stop the backend server
-2. Run the command
-3. Should see error: "Cannot connect to backend"
-
-**Test: File not in Git repo**
-1. Open a file outside any Git repository
-2. Run the command
-3. Should see error about Git repository
-
-**Test: Empty file**
-1. Create an empty file in a Git repo
-2. Run the command
-3. Should handle gracefully
-
-### 3. Test Configuration
-
-1. Open VS Code Settings (`Ctrl+,` or `Cmd+,`)
-2. Search for "ContextWeave"
-3. Change `backendUrl` to `http://localhost:9999` (wrong port)
-4. Run command
-5. Should see connection error
-6. Change back to `http://localhost:8000`
-
-## Testing Without LLM API Key
-
-The system should work in "mock mode" without an API key:
-
-1. **Don't set `LLM_API_KEY`** environment variable
-2. Start backend
-3. Run extension command
-4. Should see:
-   - ⚠️ Warning: "Mock Response: LLM not configured"
-   - Generic summary
-   - Raw commit messages as decisions
-   - Related files based on imports
-
-This is useful for:
-- Testing integration without API costs
-- Demonstrating the system without API access
-- Development and debugging
-
-## Testing with Different Repositories
-
-### Good Test Cases
-
-1. **Small Python project** (10-50 files)
-   - Clear imports
-   - Good commit messages
-   - Multiple contributors
-
-2. **JavaScript/TypeScript project**
-   - Test import detection
-   - Test with different file extensions
-
-3. **Java project**
-   - Test Java import parsing
-   - Test with package structure
-
-4. **File with rich history**
-   - 50+ commits
-   - Multiple refactorings
-   - Clear design decisions
-
-### Edge Cases to Test
-
-1. **New file** (no commits)
-   - Should handle gracefully
-   - Summary only, no decisions
-
-2. **Binary file**
-   - Should return error or skip
-
-3. **Very large file** (10,000+ lines)
-   - Should truncate for analysis
-   - Should still work
-
-4. **File with sparse commits**
-   - Only 1-2 commits
-   - Should say "Limited commit history"
-
-5. **File with unclear commit messages**
-   - Messages like "fix", "update", "wip"
-   - LLM should admit uncertainty
-
-## Performance Testing
-
-### Backend Response Time
-
+**Expected Result:**
 ```python
-import time
-import requests
-
-payload = {
-    "repo_path": "/path/to/repo",
-    "file_path": "/path/to/repo/file.py",
-    "commit_limit": 50
-}
-
-start = time.time()
-response = requests.post("http://localhost:8000/context/file", json=payload)
-end = time.time()
-
-print(f"Response time: {end - start:.2f} seconds")
-print(f"Status: {response.status_code}")
+Found 5 co-changed files
+[
+  {'path': 'backend/git_utils.py', 'frequency': 8},
+  {'path': 'backend/llm_client.py', 'frequency': 6},
+  {'path': 'backend/schemas.py', 'frequency': 4}
+]
 ```
 
-Expected times:
-- Without LLM: < 1 second
-- With LLM (GPT-3.5): 3-8 seconds
-- With LLM (GPT-4): 5-15 seconds
+**Pass Criteria:**
+- Returns list of dicts with 'path' and 'frequency'
+- Sorted by frequency (highest first)
 
-### Extension Responsiveness
+---
 
-1. Run command
-2. Sidebar should show loading immediately (< 100ms)
-3. Results should appear within 10-15 seconds
-4. UI should remain responsive during loading
+## 3. LLM Integration Testing
 
-## Debugging
+### Test 3.1: Mock Mode (No API Key)
 
-### Backend Debugging
+**Purpose:** Verify mock mode works when LLM is not configured.
 
-1. **Check logs** in terminal where backend is running
-2. **Add print statements** in `main.py`, `git_utils.py`, `llm_client.py`
-3. **Use Python debugger**:
-   ```python
-   import pdb; pdb.set_trace()
+**Steps:**
+1. Remove API key from `backend/.env`:
+   ```bash
+   # Comment out or remove LLM_API_KEY
+   # LLM_API_KEY=...
    ```
 
-### Extension Debugging
+2. Restart backend: `Ctrl+C` then `python main.py`
 
-1. **Open Developer Tools** in Extension Development Host
-   - Help > Toggle Developer Tools
-   - Check Console for errors
-
-2. **Add console.log** in TypeScript files:
-   ```typescript
-   console.log('Debug info:', variable);
+3. Call API:
+   ```bash
+   curl -X POST http://localhost:8000/context/file \
+     -H "Content-Type: application/json" \
+     -d '{
+       "repo_path": "/path/to/contextweave-lite",
+       "file_path": "/path/to/contextweave-lite/backend/main.py",
+       "selected_code": null,
+       "commit_limit": 50
+     }'
    ```
 
-3. **Use VS Code debugger**:
-   - Set breakpoints in TypeScript files
-   - Press `F5` to start debugging
-   - Breakpoints will hit when command runs
+**Expected Result:**
+- Status code 200
+- Response includes `"mock_response": true` in metadata
+- Summary mentions "Configure LLM_API_KEY"
+- Decisions are based on raw commit messages
+- Related files are based on imports/co-changes
 
-### Common Issues
+**Pass Criteria:** System works without LLM, provides deterministic response.
 
-**Issue: "Module not found" in backend**
-- Solution: Activate virtual environment, reinstall requirements
+---
 
-**Issue: Extension not loading**
-- Solution: Run `npm run compile`, check for TypeScript errors
+### Test 3.2: LLM Mode (With API Key)
 
-**Issue: Webview not updating**
-- Solution: Check browser console in webview, verify HTML is valid
+**Purpose:** Verify LLM integration works correctly.
 
-**Issue: LLM timeout**
-- Solution: Increase timeout in `llm_client.py`, use faster model
+**Steps:**
+1. Add API key to `backend/.env`:
+   ```bash
+   LLM_API_KEY=your-groq-api-key-here
+   LLM_API_BASE=https://api.groq.com/openai/v1
+   LLM_MODEL=llama-3.1-8b-instant
+   ```
+
+2. Restart backend: `Ctrl+C` then `python main.py`
+
+3. Call API (same as Test 3.1)
+
+**Expected Result:**
+- Status code 200
+- Response includes `"llm_configured": true` in metadata
+- Summary is coherent and human-readable
+- Decisions are synthesized from multiple commits
+- Related files have clear explanations
+
+**Pass Criteria:**
+- LLM API is called successfully
+- Response is more detailed than mock mode
+- No "mock_response" flag in metadata
+
+---
+
+### Test 3.3: LLM Error Handling
+
+**Purpose:** Verify graceful fallback when LLM fails.
+
+**Steps:**
+1. Set invalid API key in `backend/.env`:
+   ```bash
+   LLM_API_KEY=invalid-key-12345
+   ```
+
+2. Restart backend
+
+3. Call API
+
+**Expected Result:**
+- Status code 200 (not 500)
+- Falls back to mock mode
+- Response includes `"mock_response": true`
+- Backend logs show LLM error
+
+**Pass Criteria:** System doesn't crash, falls back gracefully.
+
+---
+
+## 4. VS Code Extension Testing
+
+### Test 4.1: Extension Activation
+
+**Purpose:** Verify extension loads correctly.
+
+**Steps:**
+1. Open `vscode-extension` in VS Code
+2. Press **F5** to launch Extension Development Host
+3. Check Debug Console (View > Debug Console)
+
+**Expected Result:**
+```
+ContextWeave Lite extension activated
+```
+
+**Pass Criteria:** No activation errors, extension loads successfully.
+
+---
+
+### Test 4.2: Command Registration
+
+**Purpose:** Verify command appears in Command Palette.
+
+**Steps:**
+1. In Extension Development Host, press `Ctrl+Shift+P`
+2. Type "ContextWeave"
+
+**Expected Result:**
+- Command "ContextWeave: Explain this file" appears in list
+
+**Pass Criteria:** Command is registered and visible.
+
+---
+
+### Test 4.3: Sidebar Display
+
+**Purpose:** Verify sidebar opens and displays correctly.
+
+**Steps:**
+1. Open a Git repository in Extension Development Host
+2. Open a code file (e.g., `backend/main.py`)
+3. Run command: "ContextWeave: Explain this file"
+
+**Expected Result:**
+- Sidebar opens on the right
+- Shows loading spinner initially
+- After 3-10 seconds, shows results:
+  - Summary section
+  - Design decisions section
+  - Related files section
+- All sections are readable and well-formatted
+
+**Pass Criteria:**
+- Sidebar opens without errors
+- Results display correctly
+- UI is responsive and themed
+
+---
+
+### Test 4.4: File Link Clicking
+
+**Purpose:** Verify clicking related files opens them.
+
+**Steps:**
+1. Run analysis on a file
+2. In sidebar, click on a related file path
+
+**Expected Result:**
+- File opens in editor
+- Correct file is opened
+
+**Pass Criteria:** File links work correctly.
+
+---
+
+### Test 4.5: Error Handling (No Backend)
+
+**Purpose:** Verify error handling when backend is down.
+
+**Steps:**
+1. Stop the backend: `Ctrl+C` in backend terminal
+2. In Extension Development Host, run command
+
+**Expected Result:**
+- Error message: "Cannot connect to backend server at http://localhost:8000"
+- Sidebar shows error with suggestions:
+  - "Make sure the backend is running: cd backend && python main.py"
+  - "Check that the backend URL is correct in VS Code settings"
+  - "Verify no firewall is blocking localhost:8000"
+
+**Pass Criteria:** Clear error message with actionable suggestions.
+
+---
+
+### Test 4.6: Error Handling (Not a Git Repo)
+
+**Purpose:** Verify error handling for non-Git directories.
+
+**Steps:**
+1. Create a temporary directory: `mkdir /tmp/not-a-repo`
+2. Open it in Extension Development Host
+3. Create a file: `test.py`
+4. Run command
+
+**Expected Result:**
+- Error message: "Invalid request: Not a valid Git repository"
+- Sidebar shows error with suggestions:
+  - "Make sure the file is in a Git repository"
+  - "Check that the file exists and is tracked by Git"
+  - "Try running: git status"
+
+**Pass Criteria:** Clear error message with actionable suggestions.
+
+---
+
+## 5. End-to-End Testing
+
+### Test 5.1: Complete User Workflow
+
+**Purpose:** Test complete user journey from start to finish.
+
+**Steps:**
+1. Start backend: `cd backend && python main.py`
+2. Compile extension: `cd vscode-extension && npm run compile`
+3. Launch extension: Press **F5** in VS Code
+4. Open a Git repository in Extension Development Host
+5. Open a code file
+6. Run command: "ContextWeave: Explain this file"
+7. Wait for results
+8. Click on a related file
+9. Run command again on the new file
+
+**Expected Result:**
+- All steps complete without errors
+- Results are displayed correctly
+- File navigation works
+- Second analysis works on new file
+
+**Pass Criteria:** Complete workflow works end-to-end.
+
+---
+
+### Test 5.2: Selected Code Explanation
+
+**Purpose:** Test "weird code" explanation feature.
+
+**Steps:**
+1. Open a code file
+2. Select 5-10 lines of code
+3. Run command: "ContextWeave: Explain this file"
+
+**Expected Result:**
+- Sidebar shows additional section: "🤔 Selected Code Explanation"
+- Explanation is relevant to selected code
+- Explanation references Git history if available
+
+**Pass Criteria:** Selected code explanation works correctly.
+
+---
+
+### Test 5.3: Multiple Files
+
+**Purpose:** Test analyzing multiple files in sequence.
+
+**Steps:**
+1. Analyze file A
+2. Analyze file B
+3. Analyze file C
+
+**Expected Result:**
+- Each analysis completes successfully
+- Results are different for each file
+- No memory leaks or performance degradation
+
+**Pass Criteria:** Multiple analyses work correctly.
+
+---
+
+## 6. Performance Testing
+
+### Test 6.1: Latency Measurement
+
+**Purpose:** Measure end-to-end latency.
+
+**Steps:**
+1. Start timer
+2. Run command: "ContextWeave: Explain this file"
+3. Stop timer when results appear
+
+**Expected Result:**
+- Latency < 15 seconds for typical files
+- Latency breakdown:
+  - Git analysis: 0.5-2 seconds
+  - LLM API call: 2-5 seconds
+  - Network: 0.1-0.5 seconds
+  - UI rendering: < 0.1 seconds
+
+**Pass Criteria:** Total latency < 15 seconds.
+
+---
+
+### Test 6.2: Large File Handling
+
+**Purpose:** Test handling of large files.
+
+**Steps:**
+1. Create or find a file > 10,000 lines
+2. Run analysis
+
+**Expected Result:**
+- Analysis completes successfully
+- File is truncated with note: "[File truncated after 10,000 lines]"
+- No memory issues or crashes
+
+**Pass Criteria:** Large files are handled gracefully.
+
+---
+
+### Test 6.3: Many Commits Handling
+
+**Purpose:** Test handling of files with many commits.
+
+**Steps:**
+1. Find a file with > 100 commits
+2. Set commit limit to 100 in VS Code settings
+3. Run analysis
+
+**Expected Result:**
+- Analysis completes successfully
+- Only top 100 commits are analyzed
+- Metadata shows: `"commits_analyzed": 100`
+
+**Pass Criteria:** Many commits are handled efficiently.
+
+---
+
+## 7. Edge Case Testing
+
+### Test 7.1: Empty File
+
+**Purpose:** Test handling of empty files.
+
+**Steps:**
+1. Create empty file: `touch empty.py`
+2. Add to Git: `git add empty.py && git commit -m "Add empty file"`
+3. Run analysis
+
+**Expected Result:**
+- Analysis completes
+- Summary mentions file is empty
+- No crashes
+
+**Pass Criteria:** Empty files are handled gracefully.
+
+---
+
+### Test 7.2: No Commit History
+
+**Purpose:** Test handling of files with no commits.
+
+**Steps:**
+1. Create new file: `echo "test" > new.py`
+2. Add to Git but don't commit: `git add new.py`
+3. Run analysis
+
+**Expected Result:**
+- Analysis completes
+- Shows: "No commit history found for this file"
+- Related files still work (based on imports)
+
+**Pass Criteria:** Files without commits are handled gracefully.
+
+---
+
+### Test 7.3: Binary File
+
+**Purpose:** Test handling of binary files.
+
+**Steps:**
+1. Try to analyze a binary file (e.g., `.png`, `.pdf`)
+
+**Expected Result:**
+- Error or graceful handling
+- Clear message that binary files are not supported
+
+**Pass Criteria:** Binary files don't crash the system.
+
+---
+
+## Test Results Template
+
+Use this template to record test results:
+
+```
+Test ID: 1.1
+Test Name: Health Check Endpoint
+Date: 2026-02-07
+Tester: Your Name
+Result: PASS / FAIL
+Notes: [Any observations or issues]
+```
+
+---
 
 ## Automated Testing (Future)
 
-### Backend Tests (pytest)
+For future development, consider adding:
 
+### Backend Unit Tests
 ```python
-# test_git_utils.py
+# tests/test_git_utils.py
 def test_get_commit_history():
-    commits = get_commit_history("/path/to/repo", "/path/to/file.py", limit=10)
-    assert len(commits) <= 10
-    assert all("hash" in c for c in commits)
-
-def test_extract_imports():
-    code = "import os\nfrom typing import List"
-    imports = extract_imports(code, "test.py")
-    assert "os" in str(imports)
+    commits = get_commit_history(...)
+    assert len(commits) > 0
+    assert 'hash' in commits[0]
 ```
 
-### Extension Tests (Jest)
+### Backend Integration Tests
+```python
+# tests/test_api.py
+def test_analyze_file_endpoint():
+    response = client.post("/context/file", json={...})
+    assert response.status_code == 200
+```
 
+### Extension Tests
 ```typescript
-// extension.test.ts
-import * as assert from 'assert';
-import { analyzeFile } from '../src/apiClient';
-
-suite('API Client Tests', () => {
-    test('analyzeFile returns valid response', async () => {
-        const result = await analyzeFile('/repo', '/repo/file.py');
-        assert.ok(result.summary);
-        assert.ok(Array.isArray(result.decisions));
-    });
+// src/test/extension.test.ts
+test('Command is registered', () => {
+    const commands = vscode.commands.getCommands();
+    assert(commands.includes('contextweave.explainFile'));
 });
 ```
 
-## Checklist Before Release
+---
 
-- [ ] Backend starts without errors
-- [ ] Health endpoint returns 200
-- [ ] File analysis works with real Git repo
-- [ ] Extension loads in VS Code
-- [ ] Command appears in Command Palette
-- [ ] Sidebar opens and shows results
-- [ ] Related files are clickable
-- [ ] Error messages are clear and helpful
-- [ ] Works without LLM API key (mock mode)
-- [ ] Works with LLM API key (real analysis)
-- [ ] README is accurate and complete
-- [ ] All dependencies are in requirements.txt and package.json
+## Reporting Issues
 
-## Getting Help
+When reporting test failures, include:
 
-If tests fail:
-1. Check backend logs for errors
-2. Check VS Code Developer Tools console
-3. Verify Git repository is valid
-4. Verify file has commit history
-5. Check LLM API key is valid
-6. Review error messages carefully
+1. **Test ID and name**
+2. **Steps to reproduce**
+3. **Expected result**
+4. **Actual result**
+5. **Environment:**
+   - OS and version
+   - Python version
+   - Node.js version
+   - VS Code version
+6. **Logs:**
+   - Backend logs
+   - Extension Debug Console logs
+7. **Screenshots** (if applicable)
 
-For more help, see [README.md](README.md) and [QUICKSTART.md](QUICKSTART.md).
+---
+
+**Last Updated:** February 7, 2026

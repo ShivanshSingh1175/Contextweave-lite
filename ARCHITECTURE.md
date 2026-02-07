@@ -1,14 +1,22 @@
-# ContextWeave Lite - Architecture Overview
+# ContextWeave Lite - Architecture Documentation
 
-## System Architecture
+Technical architecture and design decisions for ContextWeave Lite.
+
+---
+
+## System Overview
+
+ContextWeave Lite is a three-tier system:
+
+1. **VS Code Extension (Frontend)** - TypeScript, user interface
+2. **FastAPI Backend (API Layer)** - Python, orchestration and business logic
+3. **External LLM API (AI Layer)** - Groq/OpenAI, natural language processing
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        VS Code IDE                          │
-│                                                             │
+│                     VS Code IDE                             │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │           ContextWeave Extension                     │  │
-│  │                                                      │  │
+│  │  ContextWeave Extension (TypeScript)                 │  │
 │  │  ┌────────────┐  ┌──────────────┐  ┌────────────┐  │  │
 │  │  │ Command    │  │ API Client   │  │  Sidebar   │  │  │
 │  │  │ Handler    │─▶│ (HTTP)       │  │  Webview   │  │  │
@@ -20,502 +28,610 @@
                              │ JSON Request/Response
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   FastAPI Backend                           │
-│                                                             │
+│              FastAPI Backend (Python 3.11)                  │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │                  API Layer                           │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  POST /context/file                            │  │  │
-│  │  │  - Validate request                            │  │  │
-│  │  │  - Orchestrate analysis                        │  │  │
-│  │  │  - Return structured response                  │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
+│  │  API Layer (main.py)                                 │  │
+│  │  - Request validation                                │  │
+│  │  - Orchestration                                     │  │
+│  │  - Response formatting                               │  │
 │  └──────────────────┬───────────────────────────────────┘  │
 │                     │                                       │
 │  ┌──────────────────▼───────────────────────────────────┐  │
-│  │              Git Analysis Layer                      │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  GitPython Operations (Deterministic)          │  │  │
-│  │  │  - Read file content                           │  │  │
-│  │  │  - Extract commit history                      │  │  │
-│  │  │  - Calculate diffs                             │  │  │
-│  │  │  - Find co-changed files                       │  │  │
-│  │  │  - Parse imports                               │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
+│  │  Git Analysis Layer (git_utils.py)                   │  │
+│  │  DETERMINISTIC - No AI                               │  │
+│  │  - Extract commit history                            │  │
+│  │  - Parse imports                                     │  │
+│  │  - Find co-changed files                            │  │
+│  │  - Read file content                                │  │
 │  └──────────────────┬───────────────────────────────────┘  │
 │                     │                                       │
 │  ┌──────────────────▼───────────────────────────────────┐  │
-│  │              LLM Integration Layer                   │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  AI-Powered Analysis                           │  │  │
-│  │  │  - Build structured prompts                    │  │  │
-│  │  │  - Call LLM API                                │  │  │
-│  │  │  - Parse JSON responses                        │  │  │
-│  │  │  - Handle errors & fallbacks                   │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
-│  └──────────────────┬───────────────────────────────────┘  │
-└────────────────────┼────────────────────────────────────────┘
+│  │  LLM Integration Layer (llm_client.py)               │  │
+│  │  AI-POWERED - Reasoning & NLG                        │  │
+│  │  - Build structured prompts                          │  │
+│  │  - Call LLM API                                      │  │
+│  │  - Parse JSON responses                              │  │
+│  │  - Handle errors & fallbacks                         │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
                      │
                      │ HTTPS API Call
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    LLM API Provider                         │
-│         (OpenAI / Azure / AWS Bedrock / Local)              │
-│                                                             │
-│  - Receives: Code + Commits + Instructions                 │
-│  - Returns: Summary + Decisions + Explanations             │
+│              LLM API Provider                               │
+│         (Groq / OpenAI / AWS Bedrock)                       │
+│         Model: llama-3.1-8b-instant                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Data Flow
+---
 
-### Request Flow (User → Backend → LLM)
+## Component Architecture
 
-```
-1. User Action
-   ├─ Opens file in VS Code
-   ├─ Runs "ContextWeave: Explain this file"
-   └─ (Optional) Selects code snippet
+### 1. VS Code Extension (Frontend)
 
-2. Extension Processing
-   ├─ Detects file path: /path/to/repo/src/main.py
-   ├─ Finds repo root: /path/to/repo
-   ├─ Captures selected code (if any)
-   └─ Sends HTTP POST to backend
+**Technology:** TypeScript, VS Code Extension API
 
-3. Backend: API Layer
-   ├─ Validates request (file exists, is in Git repo)
-   ├─ Checks cache (5-minute TTL)
-   └─ If cache miss, proceeds to Git layer
+**Files:**
+- `vscode-extension/src/extension.ts` - Entry point, command registration
+- `vscode-extension/src/apiClient.ts` - HTTP client for backend
+- `vscode-extension/src/sidebarProvider.ts` - Webview UI provider
 
-4. Backend: Git Layer (Deterministic)
-   ├─ Reads file content from disk
-   ├─ Queries Git history:
-   │  ├─ Last 50 commits touching this file
-   │  ├─ Commit messages, authors, dates
-   │  └─ Lines changed per commit
-   ├─ Extracts imports:
-   │  ├─ Python: import X, from Y import Z
-   │  ├─ JavaScript: import X from 'Y'
-   │  └─ Java: import com.example.X
-   └─ Finds co-changed files:
-      ├─ Files that appear in same commits
-      └─ Ranked by frequency
-
-5. Backend: LLM Layer (AI-Powered)
-   ├─ Builds structured prompt:
-   │  ├─ System instructions
-   │  ├─ File content (truncated if large)
-   │  ├─ Commit history (top 20)
-   │  ├─ Related files data
-   │  └─ Selected code (if provided)
-   ├─ Calls LLM API:
-   │  ├─ POST to OpenAI/compatible endpoint
-   │  ├─ Temperature: 0.3 (low creativity)
-   │  └─ Max tokens: 1500
-   └─ Parses JSON response:
-      ├─ Extracts summary
-      ├─ Extracts design decisions
-      ├─ Extracts related files
-      └─ Extracts code explanation
-
-6. Backend: Response
-   ├─ Combines LLM output with metadata
-   ├─ Caches result (5 minutes)
-   └─ Returns JSON to extension
-
-7. Extension: Display
-   ├─ Receives JSON response
-   ├─ Updates sidebar webview:
-   │  ├─ "What this file does" section
-   │  ├─ "Key design decisions" section
-   │  └─ "You should also read" section
-   └─ Makes commit hashes and files clickable
-```
-
-### Response Flow (LLM → Backend → Extension → User)
-
-```
-LLM Response (JSON):
-{
-  "summary": "This file handles user authentication...",
-  "decisions": [
-    {
-      "title": "Migrated to JWT",
-      "description": "Switched from sessions to JWT tokens",
-      "commits": ["abc123", "def456"]
-    }
-  ],
-  "related_files": [
-    {
-      "path": "src/models/user.py",
-      "reason": "User model used for authentication"
-    }
-  ],
-  "weird_code_explanation": "This handles legacy API..."
-}
-
-Backend Processing:
-├─ Validates JSON structure
-├─ Adds metadata:
-│  ├─ commits_analyzed: 47
-│  ├─ llm_model: "gpt-3.5-turbo"
-│  └─ confidence: "high"
-└─ Returns to extension
-
-Extension Rendering:
-├─ Parses JSON
-├─ Generates HTML with VS Code theme
-├─ Adds interactivity:
-│  ├─ Clickable commit hashes
-│  └─ Clickable file links
-└─ Displays in sidebar
-```
-
-## Component Details
-
-### 1. VS Code Extension (TypeScript)
-
-**Files**:
-- `extension.ts` - Main entry point, command registration
-- `apiClient.ts` - HTTP client for backend communication
-- `sidebarProvider.ts` - Webview UI rendering
-
-**Responsibilities**:
-- Register commands in VS Code
-- Detect file path and repo root
+**Responsibilities:**
+- Register commands and UI elements
+- Detect workspace and file paths
 - Call backend API
-- Render results in sidebar
-- Handle user interactions (click file, click commit)
+- Render results in sidebar webview
+- Handle user interactions (click file links)
 
-**Key Technologies**:
-- VS Code Extension API
-- TypeScript (strict mode)
-- Axios (HTTP client)
-- Webview API (UI)
-
-### 2. FastAPI Backend (Python)
-
-**Files**:
-- `main.py` - API endpoints, CORS, error handling
-- `schemas.py` - Pydantic models for validation
-- `git_utils.py` - Git operations (deterministic)
-- `llm_client.py` - LLM integration (AI-powered)
-
-**Responsibilities**:
-- Expose REST API endpoints
-- Validate requests
-- Orchestrate Git analysis
-- Call LLM API
-- Cache results
-- Handle errors gracefully
-
-**Key Technologies**:
-- FastAPI (async web framework)
-- Pydantic (data validation)
-- GitPython (Git operations)
-- httpx (async HTTP client)
-
-### 3. Git Analysis Layer (Deterministic)
-
-**What it does**:
-- Reads file content from disk
-- Queries Git history with GitPython
-- Extracts commit metadata (hash, author, date, message)
-- Calculates diff statistics (lines changed)
-- Parses imports using regex/AST
-- Finds co-changed files using commit analysis
-
-**Why it's deterministic**:
-- No interpretation or reasoning
-- Pure data extraction
-- Predictable, repeatable results
-- No AI involved
-
-**Output**:
-```python
-{
-  "file_content": "...",
-  "commits": [
-    {
-      "hash": "abc123",
-      "author": "John Doe",
-      "date": "2024-01-15",
-      "message": "Refactored authentication",
-      "lines_changed": 45
-    }
-  ],
-  "imports": ["os", "typing", "fastapi"],
-  "co_changed": [
-    {"path": "src/models/user.py", "frequency": 12}
-  ]
-}
-```
-
-### 4. LLM Integration Layer (AI-Powered)
-
-**What it does**:
-- Builds structured prompts with context
-- Calls OpenAI-compatible LLM API
-- Parses JSON responses
-- Handles errors and retries
-- Provides fallback (mock mode)
-
-**Why AI is needed**:
-- Interprets natural language commit messages
-- Synthesizes patterns across multiple commits
-- Infers design intent and tradeoffs
-- Generates human-readable explanations
-- Adapts tone for junior developers
-
-**Prompt Structure**:
-```
-System: You are a code analysis assistant
-User: 
-  - File content
-  - Commit history (20 commits)
-  - Related files data
-  - Instructions (summarize, extract decisions, suggest files)
-  - Output format (JSON schema)
-```
-
-**Output**:
-```json
-{
-  "summary": "AI-generated summary",
-  "decisions": [...],
-  "related_files": [...],
-  "weird_code_explanation": "..."
-}
-```
-
-## Separation of Concerns
-
-### Deterministic Logic (Git Layer)
-- ✅ Extract data from Git
-- ✅ Parse imports
-- ✅ Count co-changes
-- ✅ Calculate metrics
-- ❌ No interpretation
-- ❌ No reasoning
-- ❌ No natural language generation
-
-### AI Logic (LLM Layer)
-- ✅ Interpret commit messages
-- ✅ Synthesize patterns
-- ✅ Infer intent
-- ✅ Generate explanations
-- ✅ Reason about relationships
-- ❌ No data extraction
-- ❌ No Git operations
-
-**Why this separation matters**:
-- Clear responsibilities
-- Easy to test
-- Easy to swap LLM providers
-- Can work without LLM (mock mode)
-- Demonstrates meaningful AI use
-
-## Error Handling
-
-### Extension Error Handling
-```
-User Action
-    ↓
-Try to analyze file
-    ↓
-Error? ─────────────┐
-    │               │
-    No              Yes
-    ↓               ↓
-Show results    Show error message
-                    ├─ "Backend not reachable"
-                    ├─ "File not in Git repo"
-                    ├─ "No commit history"
-                    └─ "LLM API error"
-```
-
-### Backend Error Handling
-```
-Request received
-    ↓
-Validate inputs ────────┐
-    │                   │
-    Valid               Invalid
-    ↓                   ↓
-Git operations      Return 400 error
-    ↓
-Git error? ─────────────┐
-    │                   │
-    No                  Yes
-    ↓                   ↓
-Call LLM            Return 500 error
-    ↓
-LLM error? ─────────────┐
-    │                   │
-    No                  Yes
-    ↓                   ↓
-Return result       Return mock response
-```
-
-## Caching Strategy
-
-```
-Request arrives
-    ↓
-Generate cache key: file_path + latest_commit_hash
-    ↓
-Check cache ────────────┐
-    │                   │
-    Hit                 Miss
-    ↓                   ↓
-Return cached       Analyze file
-result                  ↓
-(instant)           Cache result (5 min TTL)
-                        ↓
-                    Return result
-```
-
-**Why caching works**:
-- Key includes commit hash → invalidates on new commits
-- 5-minute TTL → balances freshness and performance
-- Reduces LLM API costs
-- Improves response time (instant vs 5-10 seconds)
-
-## Security Considerations
-
-### API Key Security
-- ✅ API key stored in environment variable (not code)
-- ✅ Never logged or exposed
-- ✅ User provides their own key
-- ❌ No shared keys
-- ❌ No key storage in database
-
-### Code Privacy
-- ✅ Code sent to LLM only for analysis
-- ✅ No long-term storage (5-minute cache only)
-- ✅ No training on user code (OpenAI policy)
-- ⚠️ User should verify LLM provider's privacy policy
-- ⚠️ Don't use with proprietary code unless approved
-
-### Input Validation
-- ✅ Pydantic validates all inputs
-- ✅ File paths checked for existence
-- ✅ Git repo validated
-- ✅ File size limits enforced
-- ✅ Commit limit capped at 100
-
-## Performance Characteristics
-
-### Latency Breakdown
-```
-Total: 5-15 seconds
-
-├─ Extension → Backend: 10-50ms
-├─ Git operations: 100-500ms
-│  ├─ Read file: 10-50ms
-│  ├─ Query commits: 50-200ms
-│  └─ Find co-changes: 50-200ms
-├─ LLM API call: 3-10 seconds
-│  ├─ Network: 100-500ms
-│  ├─ LLM processing: 2-8 seconds
-│  └─ Response parsing: 10-50ms
-└─ Backend → Extension: 10-50ms
-```
-
-### Optimization Opportunities
-- ✅ Cache results (5-minute TTL) - implemented
-- ⚠️ Use faster LLM (GPT-3.5 vs GPT-4)
-- ⚠️ Reduce commit limit (20 vs 50)
-- ⚠️ Truncate large files
-- ❌ Batch multiple requests - not implemented
-- ❌ Stream LLM responses - not implemented
-
-## Scalability
-
-### Current Limits
-- **Concurrent users**: ~10 (single backend instance)
-- **Requests per minute**: ~60 (LLM API limit)
-- **File size**: 10,000 lines (truncated beyond)
-- **Commit history**: 100 commits max
-
-### Scaling Options
-1. **Horizontal scaling**: Multiple backend instances + load balancer
-2. **Caching**: Redis for shared cache across instances
-3. **Rate limiting**: Queue requests, throttle per user
-4. **Async processing**: Background jobs for slow requests
-
-## Deployment Architecture
-
-### Development (Current)
-```
-Developer Machine
-├─ Backend: localhost:8000
-├─ Extension: VS Code Extension Development Host
-└─ LLM: OpenAI API (internet)
-```
-
-### Production (Future)
-```
-                    ┌─────────────┐
-                    │  VS Code    │
-                    │  Extension  │
-                    └──────┬──────┘
-                           │
-                           │ HTTPS
-                           ▼
-                    ┌─────────────┐
-                    │ Load        │
-                    │ Balancer    │
-                    └──────┬──────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-         ┌────────┐   ┌────────┐   ┌────────┐
-         │Backend │   │Backend │   │Backend │
-         │   1    │   │   2    │   │   3    │
-         └────┬───┘   └────┬───┘   └────┬───┘
-              │            │            │
-              └────────────┼────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │    Redis    │
-                    │   (Cache)   │
-                    └─────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │  LLM API    │
-                    │  (Bedrock)  │
-                    └─────────────┘
-```
-
-## Technology Stack Summary
-
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| Frontend | VS Code Extension API | IDE integration |
-| Frontend | TypeScript | Type-safe code |
-| Frontend | Webview API | Rich UI |
-| Backend | FastAPI | Async web framework |
-| Backend | Pydantic | Data validation |
-| Backend | GitPython | Git operations |
-| Backend | httpx | Async HTTP client |
-| AI | OpenAI API | LLM inference |
-| AI | Structured prompts | Consistent output |
-
-## Design Principles
-
-1. **Separation of Concerns**: Git logic ≠ AI logic
-2. **Fail Gracefully**: Mock mode when LLM unavailable
-3. **User Transparency**: Show sources, label AI output
-4. **Performance**: Cache aggressively, optimize prompts
-5. **Security**: No key storage, validate inputs
-6. **Extensibility**: Easy to add new LLM providers
-7. **Testability**: Pure functions, clear interfaces
+**Key Design Decisions:**
+- **Sidebar webview** instead of editor decorations for better readability
+- **Synchronous command execution** to ensure sidebar is visible before API call
+- **Configurable backend URL** to support remote deployments
+- **Error handling with suggestions** to guide users through common issues
 
 ---
 
-For implementation details, see:
-- [README.md](README.md) - Complete documentation
-- [design.md](design.md) - Detailed technical design
-- [requirements.md](requirements.md) - Product requirements
+### 2. FastAPI Backend (API Layer)
+
+**Technology:** Python 3.11, FastAPI, Pydantic
+
+**Files:**
+- `backend/main.py` - API endpoints and orchestration
+- `backend/schemas.py` - Pydantic models for request/response
+- `backend/git_utils.py` - Git analysis (deterministic)
+- `backend/llm_client.py` - LLM integration (AI-powered)
+
+**Responsibilities:**
+- Expose HTTP API endpoints
+- Validate inputs with Pydantic
+- Orchestrate Git analysis and LLM calls
+- Format responses
+- Handle errors and logging
+
+**Key Design Decisions:**
+- **FastAPI** for automatic OpenAPI docs and async support
+- **Pydantic** for type-safe request/response validation
+- **CORS enabled** to allow VS Code extension to call API
+- **Environment variables** for configuration (never hardcode secrets)
+- **Structured logging** for debugging and monitoring
+
+---
+
+### 3. Git Analysis Layer (Deterministic)
+
+**Technology:** GitPython
+
+**File:** `backend/git_utils.py`
+
+**Responsibilities:**
+- Extract commit history for a file
+- Parse import statements (Python, JS/TS, Java)
+- Find co-changed files (files that change together)
+- Read file content from disk
+
+**Key Design Decisions:**
+- **Pure data extraction** - no interpretation or AI
+- **Language-aware import parsing** using regex patterns
+- **Co-change analysis** based on commit frequency
+- **Truncation for large files** to avoid memory issues
+- **Graceful error handling** for edge cases (no commits, binary files)
+
+**Why Separate from AI Layer:**
+- Fast and reliable (no API calls)
+- Testable with mock Git repos
+- Can be used independently
+- Provides structured data for LLM
+
+---
+
+### 4. LLM Integration Layer (AI-Powered)
+
+**Technology:** httpx (async HTTP client), OpenAI-compatible API
+
+**File:** `backend/llm_client.py`
+
+**Responsibilities:**
+- Construct structured prompts
+- Call external LLM API
+- Parse JSON responses
+- Handle errors and fallbacks
+- Provide mock mode when LLM unavailable
+
+**Key Design Decisions:**
+- **OpenAI-compatible API** for easy model swapping
+- **Structured prompts** with clear instructions and examples
+- **Low temperature (0.3)** for consistency
+- **JSON output format** for structured parsing
+- **Fallback to mock mode** on errors (never crash)
+- **Source grounding** - all evidence provided in prompt
+
+**Prompt Engineering Strategy:**
+- Clear role definition: "You are helping a junior developer..."
+- Explicit tasks: numbered list of what to do
+- Output format: "JSON only, no markdown"
+- Uncertainty handling: "Admit when evidence is weak"
+- Audience adaptation: "Use simple language"
+
+---
+
+## Data Flow
+
+### End-to-End Flow: "Explain this file"
+
+**Step 1: User Action**
+- User opens a file in VS Code
+- User runs command: "ContextWeave: Explain this file"
+
+**Step 2: Extension (extension.ts)**
+```typescript
+1. Get active editor and file path
+2. Detect workspace folder (repo root)
+3. Get selected code (if any)
+4. Show sidebar and loading state
+5. Call backend API via apiClient.analyzeFile()
+```
+
+**Step 3: API Client (apiClient.ts)**
+```typescript
+1. Read configuration (backendUrl, commitLimit)
+2. Construct request body:
+   {
+     repo_path: "/path/to/repo",
+     file_path: "/path/to/file.py",
+     selected_code: "optional code snippet",
+     commit_limit: 50
+   }
+3. POST to http://localhost:8000/context/file
+4. Return AnalysisResult or throw error
+```
+
+**Step 4: Backend API (main.py)**
+```python
+1. Validate inputs (repo exists, file exists)
+2. Call get_commit_history() → List[Dict]
+3. Call read_file_content() → str
+4. Call get_related_files() → Dict
+5. Call analyze_file_with_llm() → ContextResponse
+6. Return JSON response
+```
+
+**Step 5: Git Analysis (git_utils.py)**
+```python
+1. get_commit_history():
+   - Use GitPython to query commits
+   - Extract hash, author, date, message, lines_changed
+   - Return list of commit dicts
+
+2. get_related_files():
+   - extract_imports(): Parse import statements
+   - find_co_changed_files(): Analyze commit co-occurrence
+   - Return dict with 'imports' and 'co_changed' lists
+```
+
+**Step 6: LLM Integration (llm_client.py)**
+```python
+1. build_analysis_prompt():
+   - Include file content (truncated if needed)
+   - Include last 20 commits
+   - Include related files data
+   - Include selected code (if provided)
+   - Return structured prompt string
+
+2. call_llm():
+   - POST to LLM API with prompt
+   - Parse JSON from response
+   - Return dict
+
+3. parse_llm_response():
+   - Extract summary, decisions, related_files
+   - Create ContextResponse with Pydantic
+   - Add metadata
+   - Return ContextResponse
+```
+
+**Step 7: Sidebar Display (sidebarProvider.ts)**
+```typescript
+1. Receive AnalysisResult from API
+2. Generate HTML with sections:
+   - Summary
+   - Design decisions (with commit badges)
+   - Related files (with clickable links)
+   - Selected code explanation (if applicable)
+3. Render in webview
+4. Handle user interactions (click file links)
+```
+
+---
+
+## Design Patterns
+
+### 1. Layered Architecture
+
+**Pattern:** Separation of concerns into distinct layers
+
+**Layers:**
+1. **Presentation Layer** (VS Code Extension) - UI and user interaction
+2. **API Layer** (FastAPI) - HTTP endpoints and orchestration
+3. **Business Logic Layer** (Git Analysis + LLM) - Core functionality
+4. **Data Layer** (Git Repository) - Data source
+
+**Benefits:**
+- Clear separation of concerns
+- Easy to test each layer independently
+- Can swap implementations (e.g., different LLM providers)
+
+---
+
+### 2. Deterministic vs AI Separation
+
+**Pattern:** Separate deterministic logic from AI-powered logic
+
+**Deterministic Layer (git_utils.py):**
+- Fast, reliable, testable
+- No API calls or external dependencies
+- Provides structured data
+
+**AI Layer (llm_client.py):**
+- Interprets and reasons
+- Generates human-readable text
+- Handles uncertainty
+
+**Benefits:**
+- System works even if LLM fails (mock mode)
+- Can test deterministic logic without LLM
+- Clear understanding of what requires AI
+
+---
+
+### 3. Fallback Strategy
+
+**Pattern:** Graceful degradation when dependencies fail
+
+**Implementation:**
+- LLM API unavailable → Mock mode (deterministic responses)
+- Git history empty → Show "No commits found"
+- File too large → Truncate with note
+- Network timeout → Show clear error message
+
+**Benefits:**
+- System never crashes
+- Users always get some value
+- Clear error messages guide users
+
+---
+
+### 4. Configuration via Environment Variables
+
+**Pattern:** Externalize configuration
+
+**Implementation:**
+- Backend loads `.env` file with `python-dotenv`
+- VS Code extension reads workspace settings
+- No hardcoded secrets or URLs
+
+**Benefits:**
+- Easy to configure for different environments
+- Secrets never committed to Git
+- Can swap LLM providers without code changes
+
+---
+
+## Technology Choices
+
+### Why FastAPI?
+
+**Alternatives:** Flask, Django, Express.js
+
+**Reasons:**
+- Automatic OpenAPI documentation
+- Built-in async support (for LLM API calls)
+- Pydantic integration for type safety
+- Fast and modern
+- Easy to deploy
+
+---
+
+### Why GitPython?
+
+**Alternatives:** subprocess + git CLI, libgit2
+
+**Reasons:**
+- Pure Python (no external dependencies)
+- High-level API (easy to use)
+- Well-maintained and documented
+- Handles edge cases gracefully
+
+---
+
+### Why Groq?
+
+**Alternatives:** OpenAI, AWS Bedrock, Anthropic Claude
+
+**Reasons:**
+- Fast inference (< 2 seconds)
+- Free tier with generous limits
+- OpenAI-compatible API (easy to swap)
+- Good code understanding
+- No credit card required for testing
+
+---
+
+### Why VS Code Extension?
+
+**Alternatives:** CLI tool, web app, IDE plugin
+
+**Reasons:**
+- Developers already use VS Code
+- Native integration with workspace and Git
+- Rich UI capabilities (webviews)
+- Easy to distribute (VS Code Marketplace)
+- Access to file system and Git
+
+---
+
+## Security Considerations
+
+### 1. API Key Management
+
+**Risk:** API keys leaked in Git
+
+**Mitigation:**
+- Store keys in `.env` file
+- Add `.env` to `.gitignore`
+- Provide `.env.example` template
+- Never log API keys
+- Health endpoint shows `llm_configured: true/false` but never exposes key
+
+---
+
+### 2. Code Privacy
+
+**Risk:** Proprietary code sent to external LLM
+
+**Mitigation:**
+- User provides their own API key (not shared)
+- Code sent only for analysis (not training)
+- No long-term storage of code
+- Documentation warns about sending proprietary code
+- Future: Support self-hosted LLMs
+
+---
+
+### 3. Input Validation
+
+**Risk:** Malicious inputs crash backend
+
+**Mitigation:**
+- Pydantic validates all inputs
+- Check file paths exist before reading
+- Validate Git repository before querying
+- Truncate large files to prevent memory issues
+- Timeout on LLM API calls (30 seconds)
+
+---
+
+### 4. CORS Configuration
+
+**Risk:** Unauthorized access to backend
+
+**Mitigation:**
+- CORS allows all origins (for MVP)
+- Future: Restrict to specific origins
+- No authentication required (local deployment)
+- Future: Add API key authentication for remote deployments
+
+---
+
+## Performance Considerations
+
+### 1. Latency Optimization
+
+**Target:** < 15 seconds end-to-end
+
+**Optimizations:**
+- Truncate large files to 6000 chars
+- Limit commits to 50 by default
+- Use fast LLM model (llama-3.1-8b-instant)
+- Async API calls (FastAPI + httpx)
+- Show loading indicator immediately
+
+**Measured Latency:**
+- Git analysis: 0.5-2 seconds
+- LLM API call: 2-5 seconds
+- Network round-trip: 0.1-0.5 seconds
+- UI rendering: < 0.1 seconds
+- **Total:** 3-8 seconds (well under target)
+
+---
+
+### 2. Memory Management
+
+**Risk:** Large files or repos cause memory issues
+
+**Mitigation:**
+- Truncate files > 10,000 lines
+- Limit commits to 100 max
+- Stream file reading (not load entire file)
+- No caching (for MVP)
+
+---
+
+### 3. API Rate Limits
+
+**Risk:** Exceed LLM API rate limits
+
+**Mitigation:**
+- Use free tier with generous limits (Groq: 30 requests/minute)
+- Show clear error message on rate limit
+- Future: Implement request queuing
+- Future: Cache results for 5 minutes
+
+---
+
+## Scalability Considerations
+
+### Current Architecture (MVP)
+
+**Deployment:** Local development (localhost:8000)
+
+**Limitations:**
+- Single user
+- No caching
+- No load balancing
+- No monitoring
+
+**Suitable for:** Hackathon demo, personal use, small teams
+
+---
+
+### Future Architecture (Production)
+
+**Deployment:** Cloud-based (AWS/Azure/GCP)
+
+**Enhancements:**
+- Load balancer for multiple backend instances
+- Redis cache for repeated queries
+- Database for user preferences and history
+- Monitoring and logging (CloudWatch, Datadog)
+- Authentication and authorization
+- Rate limiting per user
+
+**Suitable for:** Enterprise teams, public service
+
+---
+
+## Testing Strategy
+
+### Unit Tests
+
+**Backend:**
+- `test_git_utils.py` - Test Git analysis functions with mock repos
+- `test_llm_client.py` - Test prompt construction and response parsing
+- `test_main.py` - Test API endpoints with mock dependencies
+
+**Extension:**
+- `test_apiClient.ts` - Test HTTP client with mock backend
+- `test_sidebarProvider.ts` - Test HTML generation
+
+---
+
+### Integration Tests
+
+**Backend:**
+- Test full API flow with real Git repo and mock LLM
+- Test error handling (invalid inputs, Git errors, LLM errors)
+
+**Extension:**
+- Test command execution with mock backend
+- Test sidebar rendering with sample data
+
+---
+
+### End-to-End Tests
+
+**Manual Testing:**
+- Test with real repositories (open-source projects)
+- Test edge cases (empty files, no commits, binary files)
+- Test error scenarios (backend down, invalid API key)
+- Test UI/UX (readability, clickability, responsiveness)
+
+---
+
+## Deployment Options
+
+### Option 1: Local Development (Current)
+
+**Setup:**
+```bash
+# Backend
+cd backend
+python main.py
+
+# Extension
+cd vscode-extension
+npm run compile
+# Press F5 in VS Code
+```
+
+**Pros:** Simple, no infrastructure needed  
+**Cons:** Single user, no remote access
+
+---
+
+### Option 2: Team Deployment (Future)
+
+**Setup:**
+- Deploy backend to AWS EC2 or Lightsail
+- Configure VS Code extension to use remote backend URL
+- Share backend URL with team
+
+**Pros:** Multiple users, centralized backend  
+**Cons:** Requires server management, costs money
+
+---
+
+### Option 3: Enterprise Deployment (Future)
+
+**Setup:**
+- Deploy backend to Kubernetes cluster
+- Use AWS Bedrock for LLM (data residency)
+- Add authentication and authorization
+- Set up monitoring and logging
+
+**Pros:** Scalable, secure, enterprise-ready  
+**Cons:** Complex setup, higher costs
+
+---
+
+## Future Enhancements
+
+### Phase 2: Enhanced Analysis
+- Multi-file analysis (module-level, feature-level)
+- Architectural diagram generation
+- Code quality insights (complexity, duplication)
+- Test coverage analysis
+
+### Phase 3: Collaboration
+- Shared annotations and notes
+- Team knowledge base
+- Onboarding checklists
+- Learning paths
+
+### Phase 4: Enterprise Features
+- Self-hosted LLM option
+- Fine-tuned models for specific codebases
+- Integration with Jira/Linear
+- Analytics and insights
+
+### Phase 5: India-Specific Features
+- Multi-language UI (Hindi, Tamil, Telugu)
+- Integration with Indian code schools (Masai, Scaler)
+- Optimized for Indian internet speeds
+- Support for Indian cloud providers
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** February 7, 2026  
+**Status:** Complete

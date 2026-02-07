@@ -1,453 +1,471 @@
-# Troubleshooting Guide
+# ContextWeave Lite - Troubleshooting Guide
 
-Common issues and solutions for ContextWeave Lite.
+Solutions to common problems and error messages.
+
+---
 
 ## Backend Issues
 
-### Backend won't start
+### Backend Won't Start
 
-**Error**: `ModuleNotFoundError: No module named 'fastapi'`
+#### Error: `ModuleNotFoundError: No module named 'fastapi'`
 
-**Solution**:
+**Cause:** Python dependencies not installed.
+
+**Solution:**
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+**Verify installation:**
+```bash
+pip list | grep fastapi
+pip list | grep gitpython
+pip list | grep httpx
+```
+
 ---
 
-**Error**: `Address already in use` or `Port 8000 is already allocated`
+#### Error: `Address already in use`
 
-**Solution**:
-```bash
-# Find process using port 8000
-# Windows:
+**Cause:** Port 8000 is already in use by another process.
+
+**Solution 1:** Stop the other process using port 8000
+
+**Windows:**
+```cmd
 netstat -ano | findstr :8000
 taskkill /PID <PID> /F
+```
 
-# macOS/Linux:
+**Linux/Mac:**
+```bash
 lsof -i :8000
 kill -9 <PID>
-
-# Or use a different port:
-export PORT=8001
-python main.py
 ```
+
+**Solution 2:** Use a different port
+
+Edit `backend/.env`:
+```bash
+PORT=8001
+```
+
+Update VS Code extension settings:
+- Settings > Search "contextweave" > Backend URL: `http://localhost:8001`
 
 ---
 
-**Error**: `Not a valid Git repository`
+#### Error: `python: command not found`
 
-**Solution**: Make sure you're passing the correct repo path. The path should be the root of a Git repository (containing `.git` folder).
+**Cause:** Python not installed or not in PATH.
 
-```python
-# Check if path is a Git repo:
-import os
-print(os.path.exists("/path/to/repo/.git"))  # Should be True
-```
+**Solution:**
+1. Install Python 3.11+ from https://www.python.org/downloads/
+2. Make sure "Add Python to PATH" is checked during installation
+3. Restart your terminal
+4. Verify: `python --version`
 
-## Extension Issues
+---
 
-### Extension won't load
+### Backend Crashes or Errors
 
-**Error**: `Cannot find module` or TypeScript errors
+#### Error: `Not a valid Git repository`
 
-**Solution**:
+**Cause:** The `repo_path` provided is not a Git repository.
+
+**Solution:**
+1. Make sure the folder is a Git repository: `git status`
+2. If not, initialize Git: `git init`
+3. Make at least one commit: `git add . && git commit -m "Initial commit"`
+
+---
+
+#### Error: `File does not exist`
+
+**Cause:** The `file_path` provided doesn't exist.
+
+**Solution:**
+1. Check that the file exists: `ls <file_path>` (Linux/Mac) or `dir <file_path>` (Windows)
+2. Make sure you're using absolute paths, not relative paths
+3. Check for typos in the file path
+
+---
+
+#### Error: `Invalid LLM API key`
+
+**Cause:** The LLM API key in `.env` is invalid or expired.
+
+**Solution:**
+1. Check your API key at https://console.groq.com/keys
+2. Generate a new API key if needed
+3. Update `backend/.env`:
+   ```bash
+   LLM_API_KEY=your-new-api-key-here
+   ```
+4. Restart the backend: `Ctrl+C` then `python main.py`
+
+---
+
+#### Error: `LLM API rate limit exceeded`
+
+**Cause:** You've exceeded the API rate limit (Groq free tier: 30 requests/minute).
+
+**Solution:**
+1. Wait 1 minute and try again
+2. Reduce the number of requests
+3. Upgrade to a paid plan if needed
+
+---
+
+#### Error: `LLM API request timed out`
+
+**Cause:** The LLM API took too long to respond (> 30 seconds).
+
+**Solution:**
+1. Check your internet connection
+2. Try again (might be temporary)
+3. Try a smaller file or fewer commits
+4. Check LLM API status page
+
+---
+
+## VS Code Extension Issues
+
+### Extension Won't Load
+
+#### Error: `Cannot find module './sidebarProvider'`
+
+**Cause:** TypeScript code not compiled.
+
+**Solution:**
 ```bash
 cd vscode-extension
-npm install
 npm run compile
 ```
 
-Check for errors in the compile output. Fix any TypeScript errors before running.
-
----
-
-**Error**: Extension doesn't appear in Command Palette
-
-**Solution**:
-1. Make sure you pressed `F5` to launch Extension Development Host
-2. Check the Debug Console in the original VS Code window for errors
-3. Try reloading the Extension Development Host window (`Ctrl+R` or `Cmd+R`)
-
----
-
-**Error**: Sidebar doesn't open
-
-**Solution**:
-1. Look for "ContextWeave" in the Activity Bar (left side)
-2. Click the icon to open the sidebar
-3. If icon is missing, check `package.json` for correct configuration
-
-### Connection Issues
-
-**Error**: `Cannot connect to backend` or `ECONNREFUSED`
-
-**Solution**:
-1. Make sure backend is running: visit `http://localhost:8000/health`
-2. Check backend URL in VS Code settings:
-   - Open Settings (`Ctrl+,` or `Cmd+,`)
-   - Search "ContextWeave"
-   - Verify `backendUrl` is `http://localhost:8000`
-3. Check firewall isn't blocking port 8000
-
----
-
-**Error**: `Network Error` or `Timeout`
-
-**Solution**:
-1. Backend might be slow (LLM call takes time)
-2. Check backend logs for errors
-3. Try with a smaller file or fewer commits
-4. Increase timeout in `apiClient.ts`:
-   ```typescript
-   timeout: 60000  // 60 seconds
-   ```
-
-## Git Issues
-
-**Error**: `No commit history found for this file`
-
-**Solution**:
-1. Make sure file has been committed:
-   ```bash
-   git log -- path/to/file.py
-   ```
-2. If file is new (not committed), you'll only get a summary, no design decisions
-3. Try with a different file that has more commits
-
----
-
-**Error**: `File not found in repository`
-
-**Solution**:
-1. Make sure file path is correct
-2. File must be inside the workspace folder
-3. Check file hasn't been deleted or moved
-
-## LLM Issues
-
-**Error**: `Invalid API key` or `Unauthorized`
-
-**Solution**:
-1. Check your API key is correct:
-   ```bash
-   echo $LLM_API_KEY  # Should show your key
-   ```
-2. Make sure key hasn't expired
-3. Verify key has proper permissions
-4. For OpenAI, check: https://platform.openai.com/api-keys
-
----
-
-**Error**: `Rate limit exceeded`
-
-**Solution**:
-1. Wait a few minutes before trying again
-2. Upgrade to paid tier (OpenAI free tier is limited)
-3. Use caching to reduce requests
-4. Try a different API provider
-
----
-
-**Error**: `Model not found`
-
-**Solution**:
-1. Check model name is correct:
-   ```bash
-   echo $LLM_MODEL  # Should be gpt-3.5-turbo, gpt-4, etc.
-   ```
-2. Some providers use different names (e.g., Azure uses `gpt-35-turbo`)
-3. Check provider documentation for available models
-
----
-
-**Error**: `Timeout` or `Request took too long`
-
-**Solution**:
-1. Use a faster model (GPT-3.5 instead of GPT-4)
-2. Reduce commit limit:
-   ```json
-   {
-     "commit_limit": 20  // Instead of 50
-   }
-   ```
-3. Increase timeout in `llm_client.py`:
-   ```python
-   async with httpx.AsyncClient(timeout=60.0) as client:
-   ```
-
-## Response Issues
-
-**Error**: `Mock Response` warning appears
-
-**Solution**: This means `LLM_API_KEY` is not set. The system works but uses mock data.
-
-To fix:
+**Verify compilation:**
 ```bash
-export LLM_API_KEY="sk-your-key-here"
-# Restart backend
-python main.py
+ls out/  # Should see extension.js, apiClient.js, sidebarProvider.js
 ```
 
 ---
 
-**Error**: Response is empty or incomplete
+#### Error: `npm: command not found`
 
-**Solution**:
-1. Check backend logs for LLM errors
-2. LLM might have returned invalid JSON
-3. Try with a different file
-4. Check if file is too large (> 10,000 lines)
+**Cause:** Node.js/npm not installed.
 
----
-
-**Error**: "Limited commit context available"
-
-**Solution**: This is expected when:
-- File has < 5 commits
-- Commit messages are very brief
-- This is not an error, just a limitation
-
-## UI Issues
-
-**Error**: Sidebar shows blank page
-
-**Solution**:
-1. Open Developer Tools in Extension Development Host:
-   - Help > Toggle Developer Tools
-2. Check Console for JavaScript errors
-3. Check if HTML is valid in `sidebarProvider.ts`
+**Solution:**
+1. Install Node.js 16+ from https://nodejs.org/
+2. Restart your terminal
+3. Verify: `node --version` and `npm --version`
 
 ---
 
-**Error**: Related files don't open when clicked
+#### Extension Doesn't Appear in Command Palette
 
-**Solution**:
-1. Check file path is correct (relative to repo root)
-2. File might not exist
-3. Check browser console for errors
-4. Verify message passing is working:
-   ```typescript
-   vscode.postMessage({ type: 'openFile', path: '...' });
+**Cause:** Extension not activated or not running in Extension Development Host.
+
+**Solution:**
+1. Make sure you pressed **F5** to launch Extension Development Host
+2. Check that a new VS Code window opened
+3. In the new window, press `Ctrl+Shift+P` and search for "ContextWeave"
+4. Check the Debug Console (View > Debug Console) for activation errors
+
+---
+
+### Extension Runtime Errors
+
+#### Error: `Cannot connect to backend server`
+
+**Cause:** Backend not running or wrong URL.
+
+**Solution:**
+1. Make sure backend is running: `cd backend && python main.py`
+2. Check backend URL in VS Code settings:
+   - Settings > Search "contextweave" > Backend URL
+   - Default: `http://localhost:8000`
+3. Test backend manually: Open http://localhost:8000 in browser
+4. Check firewall settings (allow localhost:8000)
+
+---
+
+#### Error: `No active file to analyze`
+
+**Cause:** No file is open in the editor.
+
+**Solution:**
+1. Open a file in VS Code
+2. Make sure the file is in the active editor tab
+3. Try again
+
+---
+
+#### Error: `File is not in a workspace`
+
+**Cause:** The file is not part of an opened workspace/folder.
+
+**Solution:**
+1. Open a folder in VS Code: File > Open Folder
+2. Make sure the file is inside that folder
+3. Try again
+
+---
+
+#### Error: `Request timed out after 30 seconds`
+
+**Cause:** Analysis took too long (file too large, too many commits, slow LLM API).
+
+**Solution:**
+1. Try a smaller file
+2. Reduce commit limit in VS Code settings:
+   - Settings > Search "contextweave" > Commit Limit: `20`
+3. Check your internet connection
+4. Try again (might be temporary)
+
+---
+
+## Git-Related Issues
+
+### No Commit History Found
+
+**Problem:** Analysis shows "No commit history found for this file".
+
+**Cause:** The file has no commits in Git history.
+
+**Solution:**
+1. Check if file is tracked: `git status`
+2. If untracked, add it: `git add <file>`
+3. Commit it: `git commit -m "Add file"`
+4. Try analysis again
+
+---
+
+### Commit Messages Are Unhelpful
+
+**Problem:** Design decisions are generic or unhelpful (e.g., "fix", "update").
+
+**Cause:** Commit messages in the repository are too brief or generic.
+
+**Solution:**
+1. This is a limitation of the repository's commit history
+2. ContextWeave can only work with the information available
+3. For future commits, write better commit messages:
+   - Explain **why** the change was made, not just **what** changed
+   - Example: "Refactored to use async/await for better performance" instead of "refactor"
+
+---
+
+### Binary Files Not Supported
+
+**Problem:** Analysis fails on binary files (images, PDFs, etc.).
+
+**Cause:** ContextWeave only analyzes text files.
+
+**Solution:**
+1. Only use ContextWeave on text-based code files
+2. Supported: `.py`, `.js`, `.ts`, `.java`, `.cpp`, `.go`, etc.
+3. Not supported: `.png`, `.jpg`, `.pdf`, `.exe`, etc.
+
+---
+
+## LLM-Related Issues
+
+### Mock Response Instead of AI Analysis
+
+**Problem:** Sidebar shows "⚠️ Mock Response: LLM not configured".
+
+**Cause:** No LLM API key configured or LLM API call failed.
+
+**Solution:**
+1. Add API key to `backend/.env`:
+   ```bash
+   LLM_API_KEY=your-api-key-here
    ```
+2. Restart backend: `Ctrl+C` then `python main.py`
+3. Get a free Groq API key: https://console.groq.com/keys
 
 ---
 
-**Error**: Styling looks wrong
+### AI Analysis Is Inaccurate
 
-**Solution**:
-1. VS Code theme variables might not be available
-2. Check CSS in `_getStyles()` method
-3. Try a different VS Code theme
+**Problem:** Summary or design decisions don't match the code.
+
+**Cause:** LLM misinterpreted the code or commit messages.
+
+**Solution:**
+1. Check the commit history manually to verify
+2. Try with a different file
+3. Report the issue with examples (if this happens frequently)
+4. Remember: AI is not perfect, always verify important information
+
+---
+
+### AI Analysis Is Too Generic
+
+**Problem:** Summary is too vague or doesn't provide useful insights.
+
+**Cause:** File has limited commit history or very brief commit messages.
+
+**Solution:**
+1. Check commit history: `git log <file>`
+2. If commit messages are brief, AI has limited information
+3. Try analyzing a file with richer commit history
+4. For future commits, write detailed commit messages
+
+---
 
 ## Performance Issues
 
-**Error**: Analysis takes > 30 seconds
+### Analysis Takes Too Long
 
-**Solution**:
-1. File might be very large - check file size
-2. Too many commits - reduce `commit_limit`
-3. LLM is slow - try GPT-3.5 instead of GPT-4
-4. Network is slow - check internet connection
+**Problem:** Analysis takes > 30 seconds.
 
----
+**Cause:** Large file, many commits, or slow LLM API.
 
-**Error**: Extension feels sluggish
-
-**Solution**:
-1. Check CPU usage (LLM calls are CPU-intensive)
-2. Close other VS Code windows
-3. Restart VS Code
-4. Check for memory leaks in extension
-
-## Development Issues
-
-**Error**: Changes to TypeScript not reflected
-
-**Solution**:
-```bash
-# Recompile
-npm run compile
-
-# Or use watch mode
-npm run watch
-
-# Then reload Extension Development Host (Ctrl+R or Cmd+R)
-```
+**Solution:**
+1. Reduce commit limit in VS Code settings:
+   - Settings > Search "contextweave" > Commit Limit: `20`
+2. Try a smaller file
+3. Check your internet connection
+4. Check LLM API status
 
 ---
 
-**Error**: Changes to Python not reflected
+### Backend Uses Too Much Memory
 
-**Solution**:
-Backend runs with auto-reload, but sometimes you need to restart:
+**Problem:** Backend process uses excessive memory.
+
+**Cause:** Very large files or repositories.
+
+**Solution:**
+1. ContextWeave automatically truncates files > 10,000 lines
+2. Limit commits to 50 or fewer
+3. Restart backend periodically: `Ctrl+C` then `python main.py`
+
+---
+
+## Configuration Issues
+
+### Environment Variables Not Loaded
+
+**Problem:** Backend doesn't see `LLM_API_KEY` even though it's in `.env`.
+
+**Cause:** `.env` file not in the correct location or not loaded.
+
+**Solution:**
+1. Make sure `.env` is in the `backend/` directory (same level as `main.py`)
+2. Check file name is exactly `.env` (not `.env.txt` or `env`)
+3. Restart backend: `Ctrl+C` then `python main.py`
+4. Check backend logs for "LLM_API_KEY not set" warning
+
+---
+
+### VS Code Settings Not Applied
+
+**Problem:** Changed settings in VS Code but extension still uses old values.
+
+**Cause:** Settings not saved or extension not reloaded.
+
+**Solution:**
+1. Make sure you saved settings: File > Save
+2. Reload extension:
+   - In Extension Development Host, press `Ctrl+R` (Windows/Linux) or `Cmd+R` (Mac)
+   - Or close and reopen Extension Development Host (F5 again)
+
+---
+
+## Debugging Tips
+
+### Enable Verbose Logging
+
+**Backend:**
+Edit `backend/main.py` and change logging level:
+```python
+logging.basicConfig(
+    level=logging.DEBUG,  # Changed from INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+```
+
+**Extension:**
+Check Debug Console in VS Code:
+- View > Debug Console
+- Look for console.log() messages
+
+---
+
+### Test Backend Manually
+
+Use `curl` or Postman to test the backend directly:
+
 ```bash
-# Stop backend (Ctrl+C)
-# Start again
-python main.py
+# Health check
+curl http://localhost:8000/health
+
+# Analyze file
+curl -X POST http://localhost:8000/context/file \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_path": "/path/to/repo",
+    "file_path": "/path/to/file.py",
+    "selected_code": null,
+    "commit_limit": 50
+  }'
 ```
 
 ---
 
-**Error**: Breakpoints not hitting
+### Check Git Repository
 
-**Solution**:
-1. Make sure you compiled TypeScript: `npm run compile`
-2. Check `outFiles` in `launch.json` is correct
-3. Try setting breakpoint in a different location
-4. Check Debug Console for errors
-
-## Platform-Specific Issues
-
-### Windows
-
-**Error**: `'python' is not recognized`
-
-**Solution**:
+Verify Git is working:
 ```bash
-# Try python3 or py
-python3 --version
-py --version
-
-# Or add Python to PATH
+cd /path/to/repo
+git status
+git log --oneline -10
+git log --follow <file>
 ```
 
 ---
 
-**Error**: Virtual environment activation fails
+### Verify Python Environment
 
-**Solution**:
-```powershell
-# Use PowerShell instead of CMD
-venv\Scripts\Activate.ps1
-
-# If execution policy error:
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-### macOS/Linux
-
-**Error**: Permission denied
-
-**Solution**:
+Check Python and dependencies:
 ```bash
-# Make sure you have write permissions
-chmod +x venv/bin/activate
-source venv/bin/activate
+python --version
+pip list
+which python  # Linux/Mac
+where python  # Windows
 ```
 
 ---
-
-**Error**: `xcrun: error: invalid active developer path`
-
-**Solution**:
-```bash
-# Install Xcode Command Line Tools
-xcode-select --install
-```
 
 ## Still Having Issues?
 
-### Check Logs
+If none of these solutions work:
 
-**Backend logs**:
-- Look at terminal where backend is running
-- Check for Python tracebacks
-- Look for HTTP error codes
+1. **Check the logs:**
+   - Backend: Terminal where you ran `python main.py`
+   - Extension: VS Code Debug Console (View > Debug Console)
 
-**Extension logs**:
-- Open Debug Console in VS Code
-- Check Developer Tools console
-- Look for TypeScript errors
+2. **Read the documentation:**
+   - `README.md` - Overview and features
+   - `ARCHITECTURE.md` - Technical details
+   - `GETTING_STARTED.md` - Setup guide
 
-### Verify Setup
+3. **Search for similar issues:**
+   - Check GitHub Issues (if available)
+   - Search for error messages online
 
-```bash
-# Check Python version
-python --version  # Should be 3.11+
+4. **Report the issue:**
+   - Open a GitHub Issue with:
+     - Error message (full text)
+     - Steps to reproduce
+     - Your environment (OS, Python version, Node version)
+     - Backend logs
+     - Extension logs
 
-# Check Node version
-node --version  # Should be 18+
+---
 
-# Check Git
-git --version
-
-# Check dependencies
-cd backend
-pip list | grep fastapi
-pip list | grep gitpython
-
-cd ../vscode-extension
-npm list axios
-npm list typescript
-```
-
-### Test Components Separately
-
-**Test backend**:
-```bash
-curl http://localhost:8000/health
-```
-
-**Test Git operations**:
-```python
-from git import Repo
-repo = Repo("/path/to/repo")
-print(len(list(repo.iter_commits(max_count=10))))
-```
-
-**Test LLM**:
-```bash
-# Set API key
-export LLM_API_KEY="sk-..."
-
-# Test with curl
-curl https://api.openai.com/v1/models \
-  -H "Authorization: Bearer $LLM_API_KEY"
-```
-
-### Get Help
-
-1. **Read documentation**:
-   - [README.md](README.md)
-   - [QUICKSTART.md](QUICKSTART.md)
-   - [TESTING.md](TESTING.md)
-
-2. **Check code comments**: Most functions have detailed docstrings
-
-3. **Review error messages**: They usually contain helpful information
-
-4. **Search issues**: Check if others had the same problem
-
-5. **Create minimal reproduction**: Isolate the problem
-
-### Common Gotchas
-
-- ❌ Forgetting to activate virtual environment
-- ❌ Using wrong Python version (< 3.11)
-- ❌ Not compiling TypeScript after changes
-- ❌ Backend not running when testing extension
-- ❌ Wrong repo path (not the Git root)
-- ❌ File not committed to Git
-- ❌ API key not set or expired
-- ❌ Firewall blocking port 8000
-
-### Quick Checklist
-
-Before asking for help, verify:
-
-- [ ] Python 3.11+ installed
-- [ ] Node.js 18+ installed
-- [ ] Virtual environment activated
-- [ ] Dependencies installed (`pip install -r requirements.txt`)
-- [ ] Backend running (`http://localhost:8000/health` works)
-- [ ] TypeScript compiled (`npm run compile`)
-- [ ] Extension loaded (F5 pressed)
-- [ ] File is in a Git repository
-- [ ] File has commit history
-- [ ] LLM API key set (if not using mock mode)
-
-If all checked and still not working, review error messages carefully and check logs.
+**Last Updated:** February 7, 2026

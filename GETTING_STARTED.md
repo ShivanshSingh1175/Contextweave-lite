@@ -1,376 +1,414 @@
 # Getting Started with ContextWeave Lite
 
-Welcome! This guide will help you get ContextWeave Lite running in just a few minutes.
+Complete guide to setting up and using ContextWeave Lite for the first time.
+
+---
 
 ## What is ContextWeave Lite?
 
-ContextWeave Lite is an AI-powered VS Code extension that helps you understand code files by analyzing:
-- **What the file does** (2-3 sentence summary)
-- **Key design decisions** from Git history
-- **Related files** you should read next
+ContextWeave Lite is an AI-powered VS Code extension that helps you understand code files quickly by analyzing Git history and generating clear explanations. For any file, it provides:
 
-Perfect for new developers, students, and anyone exploring unfamiliar codebases!
+- **Summary:** What the file does in 2-3 sentences
+- **Design Decisions:** Key decisions extracted from commit history
+- **Related Files:** Files you should read next to understand the context
+
+**Target Users:** Students, new graduates, and junior developers learning unfamiliar codebases.
+
+---
 
 ## Prerequisites
 
-Before you start, make sure you have:
+Before you begin, make sure you have:
 
-- ✅ **Python 3.11+** - [Download](https://www.python.org/downloads/)
-- ✅ **Node.js 18+** - [Download](https://nodejs.org/)
-- ✅ **VS Code** - [Download](https://code.visualstudio.com/)
-- ✅ **Git repository** to analyze
-- ⚠️ **OpenAI API key** (optional, but recommended) - [Get one](https://platform.openai.com/api-keys)
+- **Python 3.11 or higher** - [Download Python](https://www.python.org/downloads/)
+- **Node.js 16 or higher** - [Download Node.js](https://nodejs.org/)
+- **VS Code** - [Download VS Code](https://code.visualstudio.com/)
+- **Git** - [Download Git](https://git-scm.com/)
+- **A Git repository** to analyze (or use this project itself)
 
-## Quick Start (5 Minutes)
+**Check your versions:**
+```bash
+python --version  # Should be 3.11+
+node --version    # Should be 16+
+npm --version     # Should be 8+
+git --version     # Any recent version
+```
 
-### Step 1: Clone or Download
+---
 
-If you received this as a zip file, extract it. Otherwise:
+## Installation
+
+### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/yourusername/contextweave-lite.git
 cd contextweave-lite
 ```
 
-### Step 2: Start the Backend
+### Step 2: Set Up the Backend
 
-Open a terminal and run:
+#### 2.1 Install Python Dependencies
 
 ```bash
-# Navigate to backend
 cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate it
-# On Windows (PowerShell):
-venv\Scripts\activate
-# On Windows (CMD):
-venv\Scripts\activate.bat
-# On macOS/Linux:
-source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Set your API key (optional but recommended)
-# On Windows (PowerShell):
-$env:LLM_API_KEY="sk-your-openai-key-here"
-# On macOS/Linux:
-export LLM_API_KEY="sk-your-openai-key-here"
+**What gets installed:**
+- `fastapi` - Web framework
+- `uvicorn` - ASGI server
+- `gitpython` - Git operations
+- `httpx` - HTTP client for LLM API
+- `python-dotenv` - Environment variable management
+- `pydantic` - Data validation
 
-# Start the server
+#### 2.2 Configure Environment Variables
+
+Create a `.env` file in the `backend/` directory:
+
+```bash
+# Copy the example file
+cp .env.example .env
+```
+
+Edit `backend/.env` and add your LLM API key:
+
+```bash
+# LLM API Configuration
+LLM_API_KEY=your-api-key-here
+LLM_API_BASE=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.1-8b-instant
+
+# Server Configuration (optional)
+PORT=8000
+```
+
+**Getting a Free Groq API Key:**
+1. Go to https://console.groq.com/
+2. Sign up for a free account
+3. Navigate to "API Keys"
+4. Create a new API key
+5. Copy and paste it into your `.env` file
+
+**Note:** The system works in "mock mode" without an API key, but you won't get AI-powered analysis.
+
+#### 2.3 Start the Backend
+
+```bash
+# From the backend/ directory
 python main.py
 ```
 
 You should see:
 ```
-INFO:     Started server process
-INFO:     Uvicorn running on http://0.0.0.0:8000
+INFO:     Started server process [12345]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
 
-✅ **Backend is running!** Keep this terminal open.
+**Test the backend:**
+Open http://localhost:8000 in your browser. You should see:
+```json
+{
+  "status": "healthy",
+  "service": "ContextWeave Lite API",
+  "version": "0.1.0"
+}
+```
 
-### Step 3: Install VS Code Extension
+**Keep this terminal open** - the backend needs to stay running.
 
-Open a **new terminal** (keep backend running) and run:
+---
+
+### Step 3: Set Up the VS Code Extension
+
+Open a **new terminal** (keep the backend running in the first one).
+
+#### 3.1 Install Extension Dependencies
 
 ```bash
-# Navigate to extension folder
 cd vscode-extension
-
-# Install dependencies
 npm install
+```
 
-# Compile TypeScript
+**What gets installed:**
+- `vscode` - VS Code extension API types
+- `axios` - HTTP client
+- TypeScript and build tools
+
+#### 3.2 Compile the Extension
+
+```bash
 npm run compile
 ```
 
 You should see:
 ```
-Successfully compiled TypeScript
+> contextweave@0.1.0 compile
+> tsc -p ./
 ```
 
-✅ **Extension is compiled!**
+If there are no errors, compilation succeeded.
 
-### Step 4: Run the Extension
+#### 3.3 Run the Extension
 
-1. **Open VS Code**
-2. **Open the `vscode-extension` folder** in VS Code:
+1. Open the `vscode-extension` folder in VS Code:
    ```bash
    code .
    ```
-3. **Press F5** (or go to Run > Start Debugging)
-4. A new VS Code window opens - this is the **Extension Development Host**
 
-✅ **Extension is running!**
+2. Press **F5** to launch the Extension Development Host
 
-### Step 5: Try It Out!
+3. A new VS Code window will open with the extension loaded
 
-In the **Extension Development Host** window:
+**Tip:** You can also use the "Run and Debug" panel (Ctrl+Shift+D) and click "Run Extension".
 
-1. **Open a Git repository** (File > Open Folder)
-   - Use any project with Git history
-   - Or use the ContextWeave Lite repo itself!
+---
 
-2. **Open a file** that has some commits
-   - For example: `backend/main.py`
+## First Use
 
-3. **Open Command Palette**:
-   - Windows/Linux: `Ctrl+Shift+P`
-   - macOS: `Cmd+Shift+P`
+### Step 1: Open a Git Repository
 
-4. **Type**: `ContextWeave: Explain this file`
+In the **Extension Development Host** window (the new VS Code window that opened):
 
-5. **Press Enter**
+1. Click "File" > "Open Folder"
+2. Select a folder that is a Git repository
+3. Click "Select Folder"
 
-The ContextWeave sidebar will open showing:
-- 📄 **What this file does**
-- 🔍 **Key design decisions** (with commit hashes)
-- 📚 **Related files** to read next
+**Don't have a Git repo?** Use the ContextWeave Lite project itself:
+- Navigate to the `contextweave-lite` folder you cloned
+- Open it in the Extension Development Host
 
-🎉 **Congratulations! You're using ContextWeave Lite!**
+### Step 2: Open a Code File
 
-## What If I Don't Have an API Key?
+Open any code file in the repository. For example:
+- `backend/main.py` (Python)
+- `vscode-extension/src/extension.ts` (TypeScript)
+- Any `.py`, `.js`, `.ts`, `.java` file
 
-No problem! ContextWeave works in "mock mode" without an API key:
+### Step 3: Run the Command
 
-- ✅ Git history extraction works
-- ✅ Related files detection works
-- ✅ UI works perfectly
-- ⚠️ Summaries are generic (not AI-powered)
-- ⚠️ Design decisions are raw commit messages
+**Option 1: Command Palette**
+1. Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+2. Type "ContextWeave"
+3. Select "ContextWeave: Explain this file"
+4. Press Enter
 
-You'll see a warning: "Mock Response: LLM not configured"
+**Option 2: Right-Click Menu**
+1. Right-click anywhere in the editor
+2. Select "ContextWeave: Explain this file"
 
-This is great for:
-- Testing the system
-- Understanding how it works
-- Developing without API costs
+**Option 3: Keyboard Shortcut** (if configured)
+- Press your configured shortcut (none by default)
 
-To get full AI-powered analysis, add your API key and restart the backend.
+### Step 4: View Results
 
-## Next Steps
+The ContextWeave sidebar will open on the right side and show:
 
-### Explore Features
+**📄 What this file does**
+- 2-3 sentence summary of the file's purpose
 
-**Try with different files**:
-- Files with lots of commits (rich history)
-- Files with few commits (sparse history)
-- Different programming languages
+**🔍 Key design decisions**
+- Important decisions extracted from Git history
+- Each decision shows commit hashes as evidence
 
-**Try selected code**:
-1. Select 5-10 lines of code
-2. Run the command again
-3. Get an explanation of the selected code!
+**📚 You should also read**
+- Related files to understand the context
+- Click on file paths to open them
 
-**Try related files**:
-- Click on related file links
-- They open in the editor automatically
+**🤔 Selected Code Explanation** (if you selected code)
+- Explanation of why the selected code might be unusual
 
-### Configure Settings
+---
 
-1. Open VS Code Settings (`Ctrl+,` or `Cmd+,`)
-2. Search for "ContextWeave"
-3. Adjust:
-   - `backendUrl` - Backend server URL
-   - `commitLimit` - Number of commits to analyze
+## Understanding the Results
 
-### Read Documentation
+### Summary Section
 
-- **[README.md](README.md)** - Complete documentation
-- **[TESTING.md](TESTING.md)** - Testing guide
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues
-- **[LLM_PROVIDERS.md](backend/LLM_PROVIDERS.md)** - Alternative LLM providers
+**Example:**
+> "This file is the main entry point for the ContextWeave Lite API, which provides endpoints for analyzing code context and history. It uses FastAPI and relies on environment variables loaded from a .env file. The API has endpoints for health checks, file analysis, and LLM API connectivity."
+
+**What it tells you:**
+- High-level purpose of the file
+- Key technologies used
+- Main responsibilities
+
+---
+
+### Design Decisions Section
+
+**Example:**
+```
+Added async/await for performance
+Migrated from synchronous to asynchronous processing to improve API response time
+Commits: abc123, def456
+```
+
+**What it tells you:**
+- Important architectural or design choices
+- Why those choices were made
+- Which commits introduced the changes
+
+**Click on commit hashes** to see the full commit in Git history (future feature).
+
+---
+
+### Related Files Section
+
+**Example:**
+```
+📄 backend/git_utils.py
+This service calls it for Git operations and commit history analysis
+
+📄 backend/llm_client.py
+Both handle the core analysis logic
+```
+
+**What it tells you:**
+- Files that are conceptually related
+- Why you should read them next
+- How they connect to the current file
+
+**Click on file paths** to open them in the editor.
+
+---
+
+## Configuration
+
+### Backend Configuration
+
+Edit `backend/.env` to configure:
+
+```bash
+# LLM API Configuration
+LLM_API_KEY=your-api-key-here
+LLM_API_BASE=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.1-8b-instant
+
+# Server Configuration
+PORT=8000
+```
+
+**Restart the backend** after changing `.env`:
+1. Press `Ctrl+C` in the backend terminal
+2. Run `python main.py` again
+
+---
+
+### VS Code Extension Configuration
+
+1. Open VS Code Settings: `File` > `Preferences` > `Settings`
+2. Search for "contextweave"
+3. Configure:
+
+**Backend URL**
+- Default: `http://localhost:8000`
+- Change if backend is running on a different port or remote server
+
+**Commit Limit**
+- Default: `50`
+- Maximum number of commits to analyze
+- Higher = more context, but slower
+
+---
+
+## Tips and Best Practices
+
+### 1. Start with Small Files
+
+For your first try, use a small file (< 500 lines) with good commit history. This will give you faster results and help you understand the output.
+
+### 2. Use on Unfamiliar Code
+
+ContextWeave is most useful when you're learning a new codebase. Use it to quickly understand files you've never seen before.
+
+### 3. Read Related Files
+
+After analyzing a file, click on the related files to build a mental model of how the system works.
+
+### 4. Select Weird Code
+
+If you see code that looks unusual, select it and run the command again. ContextWeave will explain why it might exist.
+
+### 5. Check Commit History
+
+If the analysis seems off, check the commit history manually. ContextWeave is only as good as the commit messages.
+
+---
 
 ## Common Issues
 
 ### "Cannot connect to backend"
 
-**Problem**: Backend isn't running or wrong URL
+**Problem:** Extension can't reach the backend server.
 
-**Solution**:
-1. Check backend is running: visit `http://localhost:8000/health`
-2. Check VS Code settings for correct `backendUrl`
-
-### "No commit history found"
-
-**Problem**: File hasn't been committed to Git
-
-**Solution**:
-1. Make sure file is in a Git repository
-2. Make sure file has been committed (not just added)
-3. Try a different file with more commits
-
-### "Module not found" errors
-
-**Problem**: Dependencies not installed
-
-**Solution**:
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-
-# Extension
-cd vscode-extension
-npm install
-npm run compile
-```
-
-### Extension doesn't appear
-
-**Problem**: Extension not loaded properly
-
-**Solution**:
-1. Make sure you pressed F5 in the `vscode-extension` folder
-2. Check Debug Console for errors
-3. Try reloading the Extension Development Host (`Ctrl+R` or `Cmd+R`)
-
-For more issues, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-
-## Understanding the Output
-
-### Summary Section
-- 2-3 sentences explaining what the file does
-- Written in simple, clear language
-- Based on code analysis and Git history
-
-### Design Decisions Section
-- Key architectural choices from Git history
-- Each decision has:
-  - **Title**: Short description
-  - **Description**: One-line explanation
-  - **Commits**: Clickable commit hashes
-
-### Related Files Section
-- Files you should read next
-- Based on:
-  - Import statements
-  - Files that change together
-- Each file has a reason explaining the relationship
-
-### Selected Code Explanation (Optional)
-- Appears when you select code before running command
-- Explains why the code might be unusual or noteworthy
-
-## Tips for Best Results
-
-### Choose Good Files
-- ✅ Files with 10+ commits
-- ✅ Files with descriptive commit messages
-- ✅ Core application files (not config)
-- ❌ Brand new files (no history)
-- ❌ Generated files (migrations, builds)
-
-### Write Good Commit Messages
-ContextWeave learns from your commit messages!
-
-- ✅ "Refactored authentication to use JWT tokens for better security"
-- ✅ "Added caching layer to improve API response time"
-- ❌ "fix"
-- ❌ "update"
-- ❌ "wip"
-
-### Use Appropriate Models
-- **GPT-3.5-turbo**: Fast, cheap, good quality
-- **GPT-4**: Slower, expensive, excellent quality
-- **Local models**: Free, private, lower quality
-
-## Cost Considerations
-
-If using OpenAI:
-- **GPT-3.5-turbo**: ~$0.002-0.01 per analysis
-- **GPT-4**: ~$0.06-0.30 per analysis
-
-For 10 analyses per day:
-- **GPT-3.5**: ~$0.10/day = $3/month
-- **GPT-4**: ~$1.00/day = $30/month
-
-Tips to reduce costs:
-- Use GPT-3.5 for most files
-- Use GPT-4 only for complex files
-- Reduce `commit_limit` to 20-30
-- Use caching (built-in 5-minute cache)
-
-## Getting Help
-
-### Documentation
-- [README.md](README.md) - Full documentation
-- [QUICKSTART.md](QUICKSTART.md) - This file
-- [TESTING.md](TESTING.md) - Testing guide
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Common issues
-
-### Check Logs
-- **Backend**: Look at terminal where `python main.py` is running
-- **Extension**: Open Debug Console in VS Code
-
-### Verify Setup
-```bash
-# Check versions
-python --version  # Should be 3.11+
-node --version    # Should be 18+
-git --version
-
-# Test backend
-curl http://localhost:8000/health
-
-# Check dependencies
-cd backend && pip list
-cd vscode-extension && npm list
-```
-
-## What's Next?
-
-Now that you have ContextWeave running:
-
-1. **Try it on your projects** - See how it helps you understand code
-2. **Customize prompts** - Edit `llm_client.py` to adjust AI behavior
-3. **Try different LLM providers** - See [LLM_PROVIDERS.md](backend/LLM_PROVIDERS.md)
-4. **Share feedback** - What works? What could be better?
-5. **Extend it** - Add features you need!
-
-## Project Structure
-
-```
-contextweave-lite/
-├── backend/              # FastAPI server
-│   ├── main.py          # API endpoints
-│   ├── git_utils.py     # Git operations
-│   ├── llm_client.py    # LLM integration
-│   └── schemas.py       # Data models
-│
-├── vscode-extension/     # VS Code extension
-│   └── src/
-│       ├── extension.ts      # Main extension
-│       ├── apiClient.ts      # Backend client
-│       └── sidebarProvider.ts # UI
-│
-└── docs/                 # Documentation
-    ├── README.md
-    ├── QUICKSTART.md
-    ├── TESTING.md
-    └── TROUBLESHOOTING.md
-```
-
-## Contributing
-
-Want to improve ContextWeave? Great!
-
-1. Make your changes
-2. Test thoroughly
-3. Update documentation
-4. Share your improvements!
-
-## License
-
-MIT License - Free to use, modify, and distribute
+**Solution:**
+1. Make sure the backend is running: `cd backend && python main.py`
+2. Check that it's running on port 8000
+3. Verify the backend URL in VS Code settings
 
 ---
 
-**Ready to explore code faster?** 🚀
+### "Not a valid Git repository"
 
-Start with [Step 1](#step-1-clone-or-download) above, and you'll be analyzing code in 5 minutes!
+**Problem:** The folder you opened is not a Git repository.
 
-Questions? Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md) or [README.md](README.md).
+**Solution:**
+1. Make sure you opened a Git repository in VS Code
+2. Run `git status` in the terminal to verify
+3. If not a Git repo, run `git init` to initialize one
+
+---
+
+### "Mock Response: LLM not configured"
+
+**Problem:** No LLM API key configured.
+
+**Solution:**
+1. Add your API key to `backend/.env`
+2. Restart the backend
+3. Get a free Groq API key: https://console.groq.com/keys
+
+---
+
+### "No commit history found"
+
+**Problem:** The file has no commits in Git history.
+
+**Solution:**
+1. Make sure the file is tracked by Git: `git add <file>`
+2. Commit the file: `git commit -m "Initial commit"`
+3. Try again
+
+---
+
+## Next Steps
+
+Now that you have ContextWeave Lite running:
+
+1. **Try it on different files** - See how it handles different languages and file types
+2. **Read the documentation** - Check out `README.md` for more details
+3. **Understand the architecture** - See `ARCHITECTURE.md` for technical details
+4. **Learn about testing** - See `TESTING.md` for test instructions
+5. **Troubleshoot issues** - See `TROUBLESHOOTING.md` for common problems
+
+---
+
+## Getting Help
+
+If you run into issues:
+
+1. **Check the logs:**
+   - Backend logs: Terminal where you ran `python main.py`
+   - Extension logs: VS Code Debug Console (View > Debug Console)
+
+2. **Read the troubleshooting guide:** `TROUBLESHOOTING.md`
+
+3. **Check the documentation:** `README.md`, `ARCHITECTURE.md`
+
+4. **Open an issue:** GitHub Issues (if available)
+
+---
+
+**Welcome to ContextWeave Lite!** We hope it helps you understand code faster and become more productive.

@@ -1,125 +1,244 @@
 # ContextWeave Lite - Quick Start Guide
 
-Get up and running in 5 minutes!
+Get ContextWeave Lite running in 5 minutes.
 
-## Step 1: Start the Backend (2 minutes)
+---
+
+## Prerequisites
+
+- **Python 3.11+** installed
+- **Node.js 16+** and npm installed
+- **VS Code** installed
+- **Git** repository to analyze (or use this project itself)
+
+---
+
+## Step 1: Backend Setup (2 minutes)
+
+### 1.1 Install Python Dependencies
 
 ```bash
-# Navigate to backend
 cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate it
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Set your OpenAI API key (or skip for mock mode)
-# Windows PowerShell:
-$env:LLM_API_KEY="sk-your-key-here"
-# macOS/Linux:
-export LLM_API_KEY="sk-your-key-here"
+### 1.2 Configure LLM API Key
 
-# Start the server
+Create a `.env` file in the `backend/` directory:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and add your API key
+# For Groq (free tier available):
+LLM_API_KEY=your-groq-api-key-here
+LLM_API_BASE=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.1-8b-instant
+```
+
+**Get a free Groq API key:** https://console.groq.com/keys
+
+**Note:** The system works in "mock mode" without an API key, but you won't get AI-powered analysis.
+
+### 1.3 Start the Backend
+
+```bash
+# From the backend/ directory
 python main.py
 ```
 
-✅ Backend should now be running at `http://localhost:8000`
+You should see:
+```
+INFO:     Uvicorn running on http://0.0.0.0:8000
+INFO:     Application startup complete.
+```
 
-Test it: Open `http://localhost:8000/health` in your browser
+**Test it:** Open http://localhost:8000 in your browser. You should see:
+```json
+{
+  "status": "healthy",
+  "service": "ContextWeave Lite API",
+  "version": "0.1.0"
+}
+```
 
-## Step 2: Install VS Code Extension (2 minutes)
+---
+
+## Step 2: VS Code Extension Setup (2 minutes)
+
+### 2.1 Install Extension Dependencies
 
 ```bash
-# Open a new terminal (keep backend running)
 cd vscode-extension
-
-# Install dependencies
 npm install
+```
 
-# Compile TypeScript
+### 2.2 Compile the Extension
+
+```bash
 npm run compile
 ```
 
-## Step 3: Run the Extension (1 minute)
+You should see output like:
+```
+> contextweave@0.1.0 compile
+> tsc -p ./
+```
+
+### 2.3 Run the Extension
 
 1. Open the `vscode-extension` folder in VS Code
-2. Press `F5` (or Run > Start Debugging)
-3. A new VS Code window opens with the extension loaded
+2. Press **F5** to launch the Extension Development Host
+3. A new VS Code window will open with the extension loaded
 
-## Step 4: Try It Out!
+---
+
+## Step 3: Try It Out (1 minute)
+
+### 3.1 Open a Git Repository
 
 In the Extension Development Host window:
+1. Open a folder that is a Git repository
+2. Open any code file (e.g., `backend/main.py` from this project)
 
-1. **Open a Git repository** (any project with Git history)
-2. **Open a file** that has some commits
-3. **Open Command Palette**: `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS)
-4. **Type**: `ContextWeave: Explain this file`
-5. **Press Enter**
+### 3.2 Run the Command
 
-The ContextWeave sidebar will open showing:
-- 📄 What this file does
-- 🔍 Key design decisions
-- 📚 Related files to read
+**Option 1:** Command Palette
+1. Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
+2. Type "ContextWeave: Explain this file"
+3. Press Enter
 
-## Optional: Test with Selected Code
+**Option 2:** Right-Click Menu
+1. Right-click in the editor
+2. Select "ContextWeave: Explain this file"
 
-1. Select a few lines of code in the editor
-2. Run `ContextWeave: Explain this file` again
-3. You'll get an additional explanation of the selected code
+### 3.3 View Results
+
+The ContextWeave sidebar will open and show:
+- 📄 **What this file does** - 2-3 sentence summary
+- 🔍 **Key design decisions** - Extracted from Git history
+- 📚 **You should also read** - Related files
+
+---
 
 ## Troubleshooting
 
-**"Cannot connect to backend"**
-- Make sure backend is running: `http://localhost:8000/health`
-- Check terminal for errors
+### Backend won't start
 
-**"No commit history found"**
-- Make sure the file has been committed to Git
-- Try a different file with more commits
+**Error:** `ModuleNotFoundError: No module named 'fastapi'`
 
-**"Mock response" warning**
-- You haven't set `LLM_API_KEY`
-- The extension works but uses mock data
-- Set the API key to get real AI analysis
+**Solution:** Install dependencies:
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+---
+
+### Extension won't load
+
+**Error:** `Cannot find module './sidebarProvider'`
+
+**Solution:** Compile the TypeScript code:
+```bash
+cd vscode-extension
+npm run compile
+```
+
+---
+
+### "Cannot connect to backend"
+
+**Error in VS Code:** `Cannot connect to backend server at http://localhost:8000`
+
+**Solution:**
+1. Make sure the backend is running: `cd backend && python main.py`
+2. Check that port 8000 is not blocked by firewall
+3. Verify backend URL in VS Code settings: `File > Preferences > Settings > Search "contextweave"`
+
+---
+
+### "Not a valid Git repository"
+
+**Error:** `Backend error: Not a valid Git repository`
+
+**Solution:**
+1. Make sure the folder you opened in VS Code is a Git repository
+2. Run `git status` in the terminal to verify
+3. If not a Git repo, run `git init` to initialize one
+
+---
+
+### Mock Response (No AI Analysis)
+
+**Warning:** `⚠️ Mock Response: LLM not configured`
+
+**Solution:**
+1. Add your LLM API key to `backend/.env`
+2. Restart the backend: `Ctrl+C` then `python main.py`
+3. Get a free Groq API key: https://console.groq.com/keys
+
+---
+
+## Configuration
+
+### Backend Configuration
+
+Edit `backend/.env`:
+
+```bash
+# LLM API Configuration
+LLM_API_KEY=your-api-key-here
+LLM_API_BASE=https://api.groq.com/openai/v1
+LLM_MODEL=llama-3.1-8b-instant
+
+# Server Configuration
+PORT=8000
+```
+
+### VS Code Extension Configuration
+
+1. Open VS Code Settings: `File > Preferences > Settings`
+2. Search for "contextweave"
+3. Configure:
+   - **Backend URL:** Default `http://localhost:8000`
+   - **Commit Limit:** Default `50` (max commits to analyze)
+
+---
 
 ## Next Steps
 
-- Read [README.md](README.md) for detailed documentation
-- Configure settings in VS Code (search "ContextWeave")
-- Try different files and repositories
-- Check [design.md](design.md) for architecture details
+- **Read the full documentation:** See `README.md` for detailed information
+- **Understand the architecture:** See `ARCHITECTURE.md` for technical details
+- **Learn about testing:** See `TESTING.md` for test instructions
+- **Troubleshoot issues:** See `TROUBLESHOOTING.md` for common problems
 
-## Getting an OpenAI API Key
+---
 
-1. Go to https://platform.openai.com/
-2. Sign up or log in
-3. Navigate to API Keys section
-4. Create a new API key
-5. Copy and set as `LLM_API_KEY`
+## Quick Reference
 
-**Note**: OpenAI charges per API call. GPT-3.5-turbo is cheaper than GPT-4.
-
-## Alternative: Use Compatible APIs
-
-ContextWeave works with any OpenAI-compatible API:
-
+### Start Backend
 ```bash
-# Azure OpenAI
-export LLM_API_KEY="your-azure-key"
-export LLM_API_BASE="https://your-resource.openai.azure.com/openai/deployments/your-deployment"
-export LLM_MODEL="gpt-35-turbo"
-
-# Local models (e.g., LM Studio, Ollama with OpenAI compatibility)
-export LLM_API_KEY="not-needed"
-export LLM_API_BASE="http://localhost:1234/v1"
-export LLM_MODEL="local-model"
+cd backend
+python main.py
 ```
 
-Happy coding! 🚀
+### Compile Extension
+```bash
+cd vscode-extension
+npm run compile
+```
+
+### Run Extension
+1. Open `vscode-extension` in VS Code
+2. Press **F5**
+
+### Use Extension
+1. Open a Git repository
+2. Open a file
+3. Run "ContextWeave: Explain this file"
+
+---
+
+**Need help?** Check `TROUBLESHOOTING.md` or open an issue on GitHub.

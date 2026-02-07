@@ -1,495 +1,871 @@
 # ContextWeave Lite - Requirements Document
 
+**Version:** 0.1.0 (MVP)  
+**Track:** AI for Bharat – AI for Learning & Developer Productivity  
+**Target:** Demo-ready hackathon submission
+
+---
+
 ## Overview
 
-ContextWeave Lite is a developer productivity tool designed to help Indian developers—especially freshers, students, and junior engineers—quickly understand large, poorly documented codebases. The system consists of a FastAPI backend that analyzes code and Git history using AI, plus a VS Code extension that displays insights in a sidebar panel.
+ContextWeave Lite is an AI-powered VS Code extension that helps Indian students and junior developers understand large, poorly documented codebases by analyzing code and Git history to generate clear, human-readable explanations.
 
-**Theme:** AI for Bharat – Learning & Developer Productivity  
-**Core Value:** Help developers learn real-world codebases faster and become productive sooner, reducing dependency on overworked senior developers.
+**Core Capability:** For any file in a Git repository, provide:
+- 2-3 sentence summary of what the file does
+- 2-3 key design decisions extracted from Git history (with commit evidence)
+- 2-3 related files to read next
+- Optional explanation of selected "weird" code
 
-**How it works:** For any file in a Git repository, ContextWeave Lite:
-1. Summarizes what the file does in 2-3 sentences
-2. Extracts key design decisions from Git history (commit messages + diffs)
-3. Lists 2-3 related files a new developer should read next
+**Architecture:** VS Code extension (TypeScript) + FastAPI backend (Python) + LLM API (Groq/OpenAI)
 
-**Technology Stack:**
-- Backend: Python 3.11, FastAPI, GitPython, external LLM API (OpenAI/AWS Bedrock)
-- Client: VS Code extension (TypeScript)
-- Optional: AWS deployment (EC2/Lightsail for backend, Bedrock for inference)
-- Development: Requirements and design generated with Kiro AI assistant
+---
 
 ## Problem Statement
 
-**Context: Developer Productivity in India**
+### Context: Developer Productivity Crisis in India
 
-Developers in India—particularly new graduates from Tier-2/Tier-3 colleges, freshers joining service companies, and junior engineers in startups—face a steep learning curve when working with large, legacy codebases. These codebases are often:
-- Poorly documented or have outdated documentation
-- Built by teams that have moved on, leaving no institutional knowledge
-- Complex, with design decisions buried in years of Git history
-- Critical to business operations, requiring quick onboarding
+**Target Users:**
+- **Students** from Tier-2/Tier-3 colleges learning from real-world GitHub projects
+- **New graduates** joining Indian companies (BFSI, govtech, startups, service firms)
+- **Junior developers** (0-2 years) maintaining legacy systems in understaffed teams
 
-**Current Pain Points:**
-- New developers spend weeks or months understanding code structure and intent
-- Senior developers are constantly interrupted with "why was this built this way?" questions
-- Reading raw commit logs is time-consuming and requires knowing what to look for
-- Existing tools (IDE navigation, Git blame) show "what" but not "why"
-- Students inheriting college projects or open-source contributions face similar challenges
+**The Pain:**
 
-**Why Existing Solutions Fall Short:**
-- Code navigation tools (Go to Definition, Find References) only show structure, not reasoning
-- Git history browsers show raw commits but don't synthesize patterns or intent
-- Documentation is often missing, outdated, or doesn't explain historical context
-- Asking senior developers doesn't scale and creates bottlenecks
+Indian developers face a unique challenge: massive, poorly documented codebases with minimal institutional knowledge.
 
-**Why AI is Essential (Not Just Convenient):**
+1. **Documentation Gap**
+   - Legacy codebases have no README, outdated wikis, or missing design docs
+   - "Documentation" is often just the code itself
+   - Critical context exists only in senior developers' heads
 
-Without AI, we can only build a commit browser that shows raw data. AI is required because:
+2. **Knowledge Concentration**
+   - 1-2 senior developers hold all context for a 50,000+ line codebase
+   - Seniors are overloaded and can't answer every "why" question
+   - New hires spend weeks just understanding basic file structure
 
-1. **Natural Language Understanding:** Commit messages are unstructured, inconsistent, and written in natural language. AI can interpret varied phrasing ("fixed bug", "refactored for performance", "migrated to async") and extract semantic meaning that rule-based regex patterns would miss.
+3. **Git History is Noisy**
+   - Commit messages like "fix", "update", "wip" provide no context
+   - Design decisions are buried across 100+ commits
+   - No one has time to manually trace history
 
-2. **Cross-Commit Reasoning:** Design decisions often span multiple commits over weeks or months. AI can synthesize patterns (e.g., "gradual migration from sync to async across 8 commits") that would require complex graph analysis and heuristics to detect with rules.
+4. **Slow Onboarding**
+   - New developers take 4-6 weeks to become productive
+   - Students can't learn from real projects because they're too opaque
+   - Junior devs are afraid to touch code they don't understand
 
-3. **Code Semantics:** AI understands code intent across languages and frameworks. It can explain "this is a repository pattern for database access" without hardcoded templates for every design pattern and language.
+**Real-World Impact:**
+- A new grad at a Bangalore BFSI company spends 3 days understanding a single payment processing file
+- A student trying to contribute to an open-source project gives up because they can't understand the codebase structure
+- A junior dev at a service company breaks production because they didn't understand why a "weird" code pattern existed
 
-4. **Contextual Synthesis:** AI can combine code structure, commit history, and co-change patterns to infer relationships ("this service calls that repository, which uses this config") that go beyond static import analysis.
+---
 
-5. **Human-Readable Explanations:** AI generates natural, accessible summaries tailored to the audience (junior developers) rather than template-based text that sounds robotic.
+## Why AI is Essential (Not Just Convenient)
 
-**If we remove AI:** The product becomes a raw commit viewer with basic file metrics—no reasoning, no synthesis, no learning acceleration. The core value (building mental models quickly) disappears.
+### What Rules Can Do (Deterministic Analysis)
+✅ Extract commit history from Git  
+✅ Parse import statements  
+✅ Count lines changed in diffs  
+✅ Find files that change together  
+✅ Collect structured data  
+
+### What Rules Cannot Do (Requires AI)
+❌ **Interpret natural language** commit messages ("refactored for perf" vs "made it faster" vs "fixed blocking issue")  
+❌ **Synthesize patterns** across multiple commits (e.g., "gradual migration from sync to async over 8 commits")  
+❌ **Infer intent and tradeoffs** (why was async chosen? what problem did it solve?)  
+❌ **Explain code semantically** ("this is a repository pattern" requires understanding design patterns)  
+❌ **Generate human-readable explanations** adapted for junior developers  
+
+**Without AI:** ContextWeave becomes a commit browser that shows raw data. The core value—building mental models quickly—disappears.
+
+**With AI:** ContextWeave interprets noisy history, reasons about design decisions, and generates clear explanations that help developers learn 5-10x faster.
+
+---
 
 ## Goals & Non-Goals
 
-### Goals
-- **Accelerate Learning:** Help Indian developers (freshers, students, junior engineers) understand unfamiliar codebases 5-10x faster
-- **Reduce Senior Dev Burden:** Decrease "why was this built this way?" interruptions by providing self-service context
-- **Meaningful AI Use:** Demonstrate AI that interprets, reasons, and synthesizes—not just keyword matching or templates
-- **Responsible Design:** Show sources, label AI output, handle uncertainty gracefully
-- **Practical MVP:** Deliver a working tool that solves a real problem for a focused user segment
-- **AI-Assisted Development:** Use Kiro and LLMs to accelerate requirements, design, and implementation
+### Goals (MVP v0.1.0)
+✅ **Demo-ready end-to-end system** that works on real Git repositories  
+✅ **Meaningful AI use** that demonstrates reasoning, not just keyword matching  
+✅ **Clear value for Indian students/devs** learning unfamiliar codebases  
+✅ **Responsible AI design** with source attribution and uncertainty handling  
+✅ **5-second comprehension** UI that's instantly useful  
+✅ **AI-assisted development** using Kiro for requirements, design, and docs  
 
-### Non-Goals
-- Multi-repo or monorepo support (single repo at a time for MVP)
-- Real-time collaboration or team features
-- Authentication, user management, or cloud storage
-- Support for non-Git version control (SVN, Mercurial)
-- Fine-tuned or self-hosted models (use external APIs)
-- Comprehensive language support (focus on Python, JavaScript, Java for MVP)
-- Production-grade deployment infrastructure (local/dev deployment is sufficient)
+### Non-Goals (Out of Scope for MVP)
+❌ Multi-repo or monorepo support (single repo at a time)  
+❌ Enterprise features (auth, teams, permissions, cloud storage)  
+❌ Real-time collaboration or shared annotations  
+❌ Complex architectural analysis across multiple files  
+❌ Fine-tuned or self-hosted models (use external APIs)  
+❌ Production-grade deployment infrastructure  
+
+---
 
 ## User Personas
 
-**Primary Persona: Priya, New Graduate Engineer**
-- 22 years old, B.Tech from Tier-2 college in Pune
-- Just joined a BFSI service company working on a 5-year-old banking application
-- Comfortable with Java basics but unfamiliar with Spring Boot, microservices architecture
-- Assigned to fix bugs in payment processing module by end of sprint
-- Hesitant to constantly ask senior developers who are already overloaded
-- Needs to build mental models of code structure and design decisions quickly
+### Persona 1: Priya - Computer Science Student
+**Background:**
+- 3rd year B.Tech student at a Tier-2 college in Pune
+- Learning web development from YouTube and GitHub projects
+- Wants to contribute to open-source but finds codebases overwhelming
 
-**Secondary Persona: Arjun, Junior Developer**
-- 1 year experience at a Bangalore startup
-- Inherited a Node.js/React codebase from a team that left the company
-- Documentation is sparse; commit messages are inconsistent
-- Needs to add features but doesn't understand why certain patterns were used
-- Wants to learn best practices by understanding historical decisions
+**Pain Points:**
+- Opens a React project with 200+ files and doesn't know where to start
+- Spends hours reading code without understanding the "why"
+- Gives up on contributing because she can't understand the architecture
 
-**Tertiary Persona: Sneha, Computer Science Student**
-- Final year student at Tier-3 college in Jaipur
-- Working on a college project inherited from seniors
-- Codebase has 50+ files with no README or comments
-- Needs to understand what each file does to extend the project
-- Limited access to original authors for questions
+**How ContextWeave Helps:**
+- Right-clicks any file → instantly sees what it does
+- Understands design decisions from Git history
+- Gets suggestions for related files to build mental model
+
+**Success Metric:** Reduces time to understand a file from 30 minutes to 3 minutes
+
+---
+
+### Persona 2: Arjun - New Graduate Engineer
+**Background:**
+- 22 years old, just joined a BFSI company in Bangalore
+- Assigned to a 5-year-old banking application (Java/Spring Boot)
+- Team has 1 senior developer who's always busy
+
+**Pain Points:**
+- Needs to fix a bug in payment processing but doesn't understand the code
+- Afraid to ask senior dev too many questions
+- Spends 3 days reading code and Git history manually
+
+**How ContextWeave Helps:**
+- Analyzes payment processing file → sees it handles transaction validation
+- Learns from Git history that async/await was added for performance
+- Discovers related files (PaymentRepository, PaymentConfig) to read next
+
+**Success Metric:** Reduces onboarding time from 6 weeks to 3 weeks
+
+---
+
+### Persona 3: Sneha - Junior Developer
+**Background:**
+- 1 year experience at a Hyderabad startup
+- Inherited a Node.js microservice from a developer who left
+- Sparse documentation, inconsistent commit messages
+
+**Pain Points:**
+- Sees "weird" code patterns but doesn't know why they exist
+- Worried about breaking things by refactoring
+- No one to ask because original author is gone
+
+**How ContextWeave Helps:**
+- Selects weird code → gets explanation from Git history
+- Learns it's a workaround for a legacy API issue
+- Gains confidence to maintain and improve the code
+
+**Success Metric:** Reduces "why" questions to senior devs by 50%
+
+---
 
 ## User Stories
 
-1. **As a new graduate joining a large BFSI codebase**, I want to right-click a Java file in VS Code and instantly see a 2-3 sentence summary of what it does, so I can quickly decide if it's relevant to my bug fix without reading 500 lines of code.
+### Story 1: Quick File Understanding
+**As a** new graduate joining a large BFSI codebase  
+**I want to** right-click a Java file and instantly see what it does  
+**So that** I can quickly decide if it's relevant to my bug fix without reading 500 lines of code
 
-2. **As a junior developer inheriting a legacy project**, I want to see key design decisions extracted from Git history (e.g., "Refactored to use async/await in commit abc123 to improve performance"), so I understand why the code evolved this way and don't accidentally break important patterns.
+**Acceptance Criteria:**
+- Command appears in VS Code context menu
+- Sidebar opens within 2 seconds
+- Summary is 2-3 sentences in simple language
+- No jargon or assumptions about prior knowledge
 
-3. **As a student working on an inherited college project**, I want to see 2-3 related files I should read next (e.g., "UserService.java calls this repository; see UserController.java for API endpoints"), so I can build a mental model of the system without randomly browsing files.
+---
 
-4. **As a developer learning a new codebase**, I want to see which specific commits and PRs informed the AI's analysis (with clickable hashes), so I can verify claims and dig deeper into the history if needed.
+### Story 2: Design Decision Discovery
+**As a** junior developer maintaining a legacy service  
+**I want to** see key design decisions extracted from Git history  
+**So that** I understand why the code evolved this way and don't accidentally break important patterns
 
-5. **As a user of AI tools**, I want the system to clearly label AI-generated content and admit when commit history is too sparse to extract meaningful decisions, so I trust the tool and don't rely on hallucinated information.
+**Acceptance Criteria:**
+- Shows 2-3 design decisions with titles and descriptions
+- Each decision cites commit hashes as evidence
+- Commit hashes are clickable (open in Git history)
+- Admits when commit history is too sparse
 
-6. **As a fresher with limited English proficiency**, I want explanations in simple, clear language (avoiding jargon where possible), so I can understand the reasoning even if I'm still learning technical terminology.
+---
+
+### Story 3: Related File Navigation
+**As a** student exploring an open-source project  
+**I want to** see which files I should read next  
+**So that** I can build a mental model of the system without randomly browsing
+
+**Acceptance Criteria:**
+- Shows 2-3 related files with explanations
+- Explanations are in simple language (e.g., "This service calls UserRepository for database access")
+- File paths are clickable (open in editor)
+- Based on imports and co-change patterns
+
+---
+
+### Story 4: Code Pattern Explanation
+**As a** developer seeing unfamiliar code  
+**I want to** select a "weird" code block and get an explanation  
+**So that** I understand why it exists before modifying it
+
+**Acceptance Criteria:**
+- Can select 5-10 lines of code
+- Run command to get explanation
+- Explanation references Git history if available
+- Admits when no clear explanation exists
+
+---
+
+### Story 5: Trust Through Transparency
+**As a** user of AI tools  
+**I want to** see which commits were used as evidence  
+**So that** I can verify claims and dig deeper if needed
+
+**Acceptance Criteria:**
+- All AI output is labeled "AI-generated"
+- Commit hashes are shown and clickable
+- Metadata shows how many commits were analyzed
+- Disclaimer about potential incompleteness
+
+---
+
+### Story 6: Works Without Friction
+**As a** developer with limited English proficiency  
+**I want** explanations in simple, clear language  
+**So that** I can understand even if I'm still learning technical terminology
+
+**Acceptance Criteria:**
+- Avoids jargon where possible
+- Uses short sentences
+- Explains concepts in plain language
+- Suitable for junior developers
+
+---
 
 ## Functional Requirements
 
-### Backend (FastAPI + Python)
+### Backend (FastAPI + Python 3.11)
 
-**FR-1: File Summary Endpoint**
-- **Input:** File path (relative to repo root), repo root path
-- **Process:**
-  - Use GitPython to verify file exists and is tracked
-  - Read file content
-  - Send to LLM with prompt: "Summarize what this file does in 2-3 sentences for a junior developer"
-- **Output:** 2-3 sentence summary in simple, clear language
-- **AI Role:** Interpret code semantics, identify main responsibilities, generate human-readable explanation
+#### FR-1: Health Check Endpoint
+**Endpoint:** `GET /health`
 
-**FR-2: Design Decisions Endpoint**
-- **Input:** File path, repo root path, optional commit limit (default: 50)
-- **Process:**
-  - Use GitPython to extract commit history for the file (last 50 commits)
-  - For each commit: get message, diff, author, date
-  - Send structured data to LLM with prompt: "Extract key design decisions from these commits. Focus on architectural changes, refactorings, and reasoning."
-- **Output:** List of 2-5 design decisions, each with:
-  - Decision description (1-2 sentences)
-  - Commit hash(es) as evidence
-  - Timestamp
-- **AI Role:** Interpret natural language commit messages, synthesize patterns across multiple commits, infer intent from diffs
-- **Fallback:** If < 5 commits or no meaningful decisions, return: "Limited commit history available for this file"
+**Purpose:** Verify backend is running and LLM is configured
 
-**FR-3: Related Files Endpoint**
-- **Input:** File path, repo root path
-- **Process:**
-  - Use GitPython to extract:
-    - Files imported/required by this file (static analysis)
-    - Files frequently co-changed with this file (Git history)
-    - Files in same directory or module
-  - Send file content + metadata to LLM with prompt: "Identify 2-3 related files a new developer should read next. Explain the relationship."
-- **Output:** List of 2-3 related files, each with:
-  - File path
-  - Relationship explanation (e.g., "This service calls UserRepository for database access")
-- **AI Role:** Understand conceptual relationships beyond imports, rank by relevance, generate explanations
+**Response:**
+```json
+{
+  "status": "healthy",
+  "llm_configured": true,
+  "version": "0.1.0"
+}
+```
 
-**FR-4: Combined Analysis Endpoint**
-- **Input:** File path, repo root path
-- **Output:** Single JSON response with summary, design decisions, and related files
-- **Optimization:** Batch LLM calls where possible to reduce latency
+**Requirements:**
+- Returns 200 OK if backend is operational
+- `llm_configured` is `true` if `LLM_API_KEY` is set, `false` otherwise
+- No authentication required
 
-**FR-5: Health Check & Configuration**
-- **Endpoint:** `/health` - returns backend status, LLM API connectivity
-- **Endpoint:** `/config` - returns supported file types, commit limit defaults
+---
+
+#### FR-2: File Analysis Endpoint
+**Endpoint:** `POST /context/file`
+
+**Purpose:** Analyze a file and return AI-powered context
+
+**Request Body:**
+```json
+{
+  "repo_path": "/absolute/path/to/repo",
+  "file_path": "/absolute/path/to/file.py",
+  "selected_code": "optional code snippet or null",
+  "commit_limit": 50
+}
+```
+
+**Response Body:**
+```json
+{
+  "summary": "2-3 sentence summary",
+  "decisions": [
+    {
+      "title": "Short title",
+      "description": "One-line explanation",
+      "commits": ["abc123", "def456"]
+    }
+  ],
+  "related_files": [
+    {
+      "path": "relative/path/to/file.py",
+      "reason": "Why this file is related"
+    }
+  ],
+  "weird_code_explanation": "Explanation or null",
+  "metadata": {
+    "commits_analyzed": 47,
+    "llm_model": "llama-3.1-8b-instant",
+    "has_commit_history": true
+  }
+}
+```
+
+**Requirements:**
+- Validate that `repo_path` is a valid Git repository
+- Validate that `file_path` exists and is tracked by Git
+- Extract last N commits (up to `commit_limit`) that touched the file
+- Read current file content from disk
+- Compute related files (imports + co-changed files)
+- Call LLM API with structured prompt
+- Parse LLM response into JSON
+- Return 400 if inputs are invalid
+- Return 500 if Git or LLM fails
+- Include error messages in response
+
+---
+
+#### FR-3: Git History Extraction
+**Purpose:** Collect structured data from Git (deterministic, no AI)
+
+**Requirements:**
+- Use GitPython to query commit history
+- For each commit, extract:
+  - Short hash (7 chars)
+  - Full hash
+  - Author name
+  - Commit date (ISO format)
+  - Commit message (full text)
+  - Lines changed (rough count from diff)
+- Sort commits by recency (most recent first)
+- Limit to `commit_limit` commits (default 50, max 100)
+- Handle edge cases:
+  - File has no commits → return empty list
+  - File is new (not committed) → return empty list
+  - Binary file → skip diff analysis
+
+---
+
+#### FR-4: Related Files Computation
+**Purpose:** Find files a developer should read next (deterministic, no AI)
+
+**Requirements:**
+- **Import Detection:**
+  - Parse Python imports: `import X`, `from Y import Z`
+  - Parse JavaScript imports: `import X from 'Y'`, `require('Y')`
+  - Parse Java imports: `import com.example.X;`
+  - Return list of imported file paths (relative to repo root)
+- **Co-Change Detection:**
+  - Query last 100 commits that touched the target file
+  - For each commit, get list of all files changed
+  - Count how often each file appears with target file
+  - Return top 5 files by co-change frequency
+- **Ranking:**
+  - Combine imports and co-changed files
+  - Prioritize imports (score 10) over co-changes (score = frequency)
+  - Return top 3 files overall
+
+---
+
+#### FR-5: LLM Integration
+**Purpose:** Call external LLM API to generate explanations (AI-powered)
+
+**Requirements:**
+- **Configuration (from `.env`):**
+  - `LLM_API_KEY` - API key (required for full mode)
+  - `LLM_API_BASE` - API endpoint (e.g., `https://api.groq.com/openai/v1`)
+  - `LLM_MODEL` - Model name (e.g., `llama-3.1-8b-instant`)
+- **Prompt Construction:**
+  - Include file path and content (truncated to 6000 chars if needed)
+  - Include last 20 commits (messages + dates + lines changed)
+  - Include related files data (imports + co-changes)
+  - Include selected code if provided
+  - Request JSON output with specific schema
+  - Emphasize: simple language, cite commits, admit uncertainty
+- **API Call:**
+  - Use OpenAI-compatible chat completions endpoint
+  - Temperature: 0.3 (low creativity, high consistency)
+  - Max tokens: 1500
+  - Timeout: 30 seconds
+- **Response Parsing:**
+  - Extract JSON from response (handle markdown code blocks)
+  - Validate against expected schema
+  - Fall back to mock response if parsing fails
 - **Error Handling:**
-  - Return structured errors for: file not found, not a Git repo, LLM API failure, rate limiting
-  - Include user-friendly messages and suggested actions
+  - 400/401 → Invalid API key
+  - 429 → Rate limit exceeded
+  - 500/503 → LLM service error
+  - Timeout → Network issue
+  - All errors → Fall back to mock mode with warning
+
+---
+
+#### FR-6: Mock Mode
+**Purpose:** Provide deterministic responses when LLM is not configured
+
+**Requirements:**
+- Activate when `LLM_API_KEY` is not set or LLM call fails
+- Generate response using only deterministic data:
+  - Summary: Generic description mentioning file name and commit count
+  - Decisions: First 2 commit messages as-is
+  - Related files: Top 3 from imports/co-changes
+  - Weird code explanation: "Configure LLM_API_KEY for AI analysis"
+- Include metadata: `"mock_response": true`
+- Log warning: "Creating mock response (LLM not configured)"
+
+---
+
+#### FR-7: Error Handling
+**Purpose:** Provide clear, actionable error messages
+
+**Requirements:**
+- **400 Bad Request:**
+  - File not found
+  - Not a Git repository
+  - Invalid input format
+- **500 Internal Server Error:**
+  - Git operation failed
+  - File read failed
+  - Unexpected exception
+- **Error Response Format:**
+```json
+{
+  "detail": "Human-readable error message",
+  "error_type": "git_error" | "file_error" | "llm_error",
+  "suggestions": ["Try this", "Or this"]
+}
+```
+
+---
 
 ### VS Code Extension (TypeScript)
 
-**FR-6: Context Menu Integration**
-- Add "Analyze with ContextWeave" to file explorer right-click menu
-- Add command to VS Code command palette: "ContextWeave: Analyze Current File"
-- Trigger analysis for selected file, send request to backend
+#### FR-8: Command Registration
+**Command:** `contextweave.explainFile`  
+**Label:** "ContextWeave: Explain this file"
 
-**FR-7: Sidebar Panel ("ContextWeave Insights")**
-- Display three collapsible sections:
-  1. **"What this file does"** - AI-generated summary
-  2. **"Key design decisions"** - List with commit hashes and timestamps
-  3. **"You should also read"** - Related files with explanations
-- Show loading spinner while backend processes request (with estimated time)
-- Use VS Code theme colors for consistency
+**Requirements:**
+- Appears in Command Palette (`Ctrl+Shift+P`)
+- Appears in file explorer context menu (right-click)
+- Appears in editor context menu (right-click)
+- Only enabled when a file is open
+- Only enabled when file is in a workspace
 
-**FR-8: Source Attribution & Transparency**
-- Label all AI-generated content with icon/badge: "✨ AI-generated"
-- Render commit hashes as clickable links (open in VS Code Git history view)
-- Include disclaimer at bottom: "AI-generated insights may be incomplete. Always verify with source code and commits."
-- Show which commits were analyzed (e.g., "Based on 47 commits from Jan 2023 to Dec 2024")
+---
 
-**FR-9: Related File Navigation**
-- Make related file names clickable to open in editor
-- Show file paths relative to repo root
-- Highlight if related file is already open in editor
+#### FR-9: Workspace Detection
+**Purpose:** Find Git repository root
 
-**FR-10: Error Handling & Edge Cases**
-- Show user-friendly error messages for:
-  - File not in a Git repository
-  - Backend unreachable
-  - LLM API rate limit exceeded
-  - File too large (> 10,000 lines)
-- Provide actionable guidance (e.g., "Ensure this file is in a Git repository with commit history")
-- Handle binary files gracefully: "This file type is not supported for analysis"
+**Requirements:**
+- Use VS Code Git extension API to find repo
+- Detect workspace folder containing current file
+- Validate that workspace is a Git repository
+- Show error if file is not in a Git repo
+- Show error if file is not in a workspace
 
-**FR-11: Configuration**
-- Allow user to set backend URL in VS Code settings (default: `http://localhost:8000`)
-- Optional: set LLM API key in settings (if backend requires it)
-- Optional: set commit history limit (default: 50)
+---
+
+#### FR-10: Backend Communication
+**Purpose:** Call FastAPI backend
+
+**Requirements:**
+- **Configuration (from VS Code settings):**
+  - `contextweave.backendUrl` - Backend URL (default: `http://localhost:8000`)
+  - `contextweave.commitLimit` - Max commits (default: 50, range: 1-100)
+- **Request Construction:**
+  - Get absolute path to repo root
+  - Get absolute path to current file
+  - Get selected text (if any)
+  - Build JSON request body
+- **HTTP Call:**
+  - POST to `{backendUrl}/context/file`
+  - Content-Type: `application/json`
+  - Timeout: 30 seconds
+- **Error Handling:**
+  - ECONNREFUSED → Backend not running
+  - 400 → Invalid request (show backend error message)
+  - 500 → Backend error (show backend error message)
+  - Timeout → Network issue
+  - All errors → Show user-friendly message in sidebar
+
+---
+
+#### FR-11: Sidebar UI
+**Purpose:** Display analysis results
+
+**Requirements:**
+- **Layout:**
+  - Section 1: "📄 What this file does" (summary)
+  - Section 2: "🔍 Key design decisions" (list)
+  - Section 3: "📚 You should also read" (list)
+  - Section 4: "🤔 Selected Code Explanation" (if selected_code provided)
+  - Footer: Metadata (commits analyzed, model, confidence)
+- **Styling:**
+  - Use VS Code theme colors
+  - Clear visual hierarchy
+  - Readable font sizes
+  - Proper spacing
+- **Interactivity:**
+  - Commit hashes are clickable → open Git history
+  - Related file paths are clickable → open in editor
+  - Collapsible sections (optional)
+- **States:**
+  - Loading: Show spinner + "Analyzing file..."
+  - Success: Show results
+  - Error: Show error message + suggestions
+  - Empty: Show "Open a file and run the command"
+
+---
+
+#### FR-12: AI Output Labeling
+**Purpose:** Responsible AI transparency
+
+**Requirements:**
+- All AI-generated content has "✨ AI-generated" badge
+- Mock responses show warning: "⚠️ Mock Response: LLM not configured"
+- Footer shows: "AI-generated insights may be incomplete. Always verify with source code."
+- Metadata shows which model was used
+- Metadata shows how many commits were analyzed
+
+---
+
+#### FR-13: Source Attribution
+**Purpose:** Show evidence for AI claims
+
+**Requirements:**
+- Each design decision lists commit hashes
+- Commit hashes are clickable (open in Git view)
+- Footer shows date range of commits analyzed
+- Related files show reason for relationship
+
+---
 
 ## Non-Functional Requirements
 
-**NFR-1: Latency & Performance**
-- Target: < 10 seconds for combined analysis (summary + decisions + related files)
-- Show progress indicators with estimated time remaining
-- Optimize LLM calls: batch requests, use streaming if available
-- Cache results for 5 minutes (same file, same commit hash)
+### NFR-1: Latency
+**Requirement:** Analysis completes in < 15 seconds for typical files
 
-**NFR-2: Usability (5-Second Comprehension Rule)**
-- Sidebar content must be scannable in 5 seconds
-- Use clear section headings: "What this file does", "Key design decisions", "You should also read"
-- Avoid jargon; use simple language suitable for junior developers
-- Use visual hierarchy: bold headings, bullet points, whitespace
+**Rationale:** Interactive use requires fast feedback
 
-**NFR-3: Reliability**
-- Handle common edge cases gracefully:
-  - Binary files (images, PDFs): show "Not supported" message
-  - Empty files or files with no history: show "No analysis available"
-  - New files (not yet committed): show "File has no Git history"
-  - Very large files (> 10,000 lines): warn or truncate
-- Graceful degradation if LLM API is slow or rate-limited
-- Retry logic for transient backend failures (max 2 retries)
+**Measurement:**
+- Backend processing: < 10 seconds
+- Network round-trip: < 2 seconds
+- UI rendering: < 1 second
 
-**NFR-4: Transparency & Responsible AI**
-- **Citation:** Always show which commits were used as evidence (hashes, dates)
-- **Labeling:** Clearly mark AI-generated content with icon/badge
-- **Uncertainty:** When commit history is sparse or ambiguous, say so explicitly:
-  - "Only 3 commits found; limited design context available"
-  - "Commit messages are brief; design decisions may be incomplete"
-- **No Hallucination:** Ground all claims in actual commits/code; never invent information
-- **Privacy:** Repository code is processed only for analysis; no long-term storage or external sharing
+**Optimization:**
+- Truncate large files to 6000 chars
+- Limit commits to 50 by default
+- Use fast LLM model (e.g., llama-3.1-8b-instant)
+- Show progress indicator during analysis
 
-**NFR-5: Code Quality & Maintainability**
-- Use Python type hints (mypy-compatible)
-- Use TypeScript strict mode for VS Code extension
-- Basic error logging for debugging (log to file or console)
-- AI-assisted code generation for boilerplate (document in README)
-- Unit tests for core backend logic (GitPython integration, prompt formatting)
+---
 
-**NFR-6: Deployment & Infrastructure (Optional)**
-- Backend can run locally (`uvicorn main:app`) or on AWS (EC2/Lightsail)
-- Optional: use AWS Bedrock for LLM inference (instead of OpenAI) for enterprise alignment
-- Configuration via environment variables (LLM API key, endpoint URL)
-- Docker support for easy deployment
+### NFR-2: Usability (5-Second Comprehension Rule)
+**Requirement:** User understands results within 5 seconds of viewing sidebar
+
+**Rationale:** Developers need quick context, not essays
+
+**Design Principles:**
+- Clear section headings with icons
+- 2-3 sentences max for summary
+- Bullet points for decisions and related files
+- No jargon or complex terminology
+- Visual hierarchy (bold, spacing, colors)
+
+---
+
+### NFR-3: Reliability
+**Requirement:** System handles edge cases gracefully without crashes
+
+**Edge Cases:**
+- Empty file → Show "File is empty"
+- No commit history → Show "No Git history available"
+- Binary file → Show "Binary files not supported"
+- Very large file (> 10,000 lines) → Truncate with note
+- LLM timeout → Fall back to mock mode
+- Invalid API key → Show clear error message
+
+---
+
+### NFR-4: Responsible AI
+
+#### Transparency
+- All AI output is clearly labeled
+- Sources (commits) are always shown
+- Model name is displayed in metadata
+
+#### Uncertainty Handling
+- When commit history is sparse (< 5 commits): "Limited commit history available"
+- When commit messages are brief: "Commit messages are brief; analysis may be incomplete"
+- When LLM confidence is low: Show warning
+
+#### No Hallucination
+- All claims must be grounded in actual commits or code
+- Never invent commit hashes or file names
+- Admit when evidence is insufficient
+
+#### Privacy
+- Code is sent to LLM API only for analysis (not training)
+- No long-term storage of code (5-minute cache only)
+- User provides their own API key (no shared keys)
+- Warn users about sending proprietary code to cloud APIs
+
+---
+
+### NFR-5: Configuration Security
+**Requirement:** API keys are never hardcoded or committed to Git
+
+**Implementation:**
+- Backend loads `LLM_API_KEY` from `.env` file
+- `.env` is in `.gitignore`
+- `.env.example` provided as template (no real keys)
+- Documentation emphasizes: "Never commit API keys"
+- Health endpoint shows `llm_configured: true/false` but never exposes key
+
+---
 
 ## AI Requirements
 
-### AI vs. Rule-Based Logic: Clear Separation
+### AI-1: Where AI is Used
 
-**Rule-Based Components (GitPython, static analysis):**
-- Extract file content from disk
-- Query Git history (commits, diffs, authors, dates)
-- Parse import statements (basic regex or AST)
-- Identify co-changed files (Git log analysis)
-- Calculate basic metrics (file size, commit count)
+| Task | Deterministic (Rules) | AI-Powered (LLM) |
+|------|----------------------|------------------|
+| Extract commit history | ✅ GitPython | ❌ |
+| Parse imports | ✅ Regex/AST | ❌ |
+| Find co-changed files | ✅ Git log analysis | ❌ |
+| **Summarize file purpose** | ❌ | ✅ Semantic understanding |
+| **Interpret commit messages** | ❌ | ✅ Natural language processing |
+| **Infer design decisions** | ❌ | ✅ Reasoning across commits |
+| **Explain code patterns** | ❌ | ✅ Semantic code understanding |
+| **Generate human-readable text** | ❌ | ✅ Natural language generation |
 
-**AI Components (LLM API):**
-- Interpret code semantics and generate summaries
-- Analyze natural language commit messages
-- Synthesize design decisions across multiple commits
-- Infer conceptual relationships between files
-- Generate human-readable explanations
+---
 
-**Critical Insight:** Rule-based logic collects structured data; AI interprets and reasons about it. Without AI, we have a commit browser. Without rules, we have no data to reason about.
+### AI-2: Why AI is Required
 
-### Where AI is Used
+#### Task: File Summarization
+**Input:** File content (code)  
+**Output:** 2-3 sentence summary
 
-**AI-1: Code Summarization**
-- **Task:** Generate 2-3 sentence summary of file purpose
-- **Input:** File content (code), file path, language
-- **LLM Prompt Example:**
-  ```
-  You are helping a junior developer understand a codebase.
-  Summarize what this file does in 2-3 clear sentences.
-  Avoid jargon; use simple language.
-  
-  File: src/services/PaymentService.java
-  Content: [file content]
-  ```
-- **Why AI:** Understands semantic intent across languages and frameworks. Can identify main responsibilities even in poorly documented code. Adapts explanation style for junior developers.
-- **Why Not Rules:** Would require language-specific parsers, hardcoded templates for every pattern (factory, repository, controller), and can't handle novel code structures.
+**Why AI:**
+- Understands code semantics across languages and frameworks
+- Identifies main responsibilities even without docstrings
+- Adapts explanation style for junior developers
+- Handles novel code structures not seen in training
 
-**AI-2: Design Decision Extraction**
-- **Task:** Analyze commit history to infer architectural choices and reasoning
-- **Input:** List of commits (message, diff, date, author)
-- **LLM Prompt Example:**
-  ```
-  You are analyzing Git history to help a new developer understand design decisions.
-  Extract 2-5 key design decisions from these commits.
-  Focus on: architectural changes, refactorings, performance improvements, bug fixes with reasoning.
-  For each decision, cite the commit hash.
-  
-  Commits:
-  - abc123 (2024-01-15): "Refactored to use async/await for better performance"
-    Diff: [diff content]
-  - def456 (2024-02-20): "Migrated from REST to GraphQL"
-    Diff: [diff content]
-  ...
-  ```
-- **Why AI:** 
-  - Interprets unstructured natural language commit messages (varied phrasing, typos, abbreviations)
-  - Understands code diffs semantically (not just line changes)
-  - Synthesizes patterns across multiple commits (e.g., "gradual migration over 8 commits")
-  - Infers intent even when commit messages are brief
-- **Why Not Rules:** Commit messages have infinite variation. Regex patterns would miss most meaningful decisions. Diff analysis requires understanding code semantics, not just text changes.
+**Why Not Rules:**
+- Would need language-specific parsers for every language
+- Would need hardcoded templates for every design pattern
+- Cannot handle new patterns or frameworks
+- Cannot adapt tone for audience
 
-**AI-3: Related File Recommendation**
-- **Task:** Identify conceptually related files and explain relationships
-- **Input:** File content, import statements, co-changed files (from Git), directory structure
-- **LLM Prompt Example:**
-  ```
-  You are helping a new developer navigate a codebase.
-  Identify 2-3 related files they should read next to understand this file.
-  Explain the relationship in simple terms.
-  
-  Current file: src/services/UserService.java
-  Content: [file content]
-  Imports: [list of imports]
-  Frequently co-changed with: [list of files]
-  ```
-- **Why AI:**
-  - Understands conceptual relationships beyond imports (e.g., "both handle authentication")
-  - Ranks by relevance for learning (not just technical coupling)
-  - Generates natural explanations ("This service calls UserRepository for database access")
-- **Why Not Rules:** Static analysis finds imports but misses semantic relationships. Co-change analysis produces false positives (files changed together for unrelated reasons).
+**Example:**
+- **Code:** 200 lines of Java Spring Boot controller
+- **Rule-based:** "This is a Java file with 5 methods"
+- **AI-powered:** "This controller handles user authentication endpoints, validates JWT tokens, and manages session state for the web application"
 
-**AI-4: Natural Language Generation**
-- **Task:** Produce human-readable explanations for all insights
-- **Why AI:** Adapts tone and detail level for junior developers. Avoids robotic template text. Handles edge cases gracefully ("Limited commit history available").
-- **Why Not Rules:** Templates are rigid and don't handle nuance.
+---
 
-### LLM Selection & Configuration
+#### Task: Design Decision Extraction
+**Input:** List of commits (messages + diffs)  
+**Output:** 2-3 key decisions with reasoning
 
-**Recommended Models:**
-- **OpenAI GPT-4 or GPT-3.5-turbo:** Strong code understanding, good instruction following
-- **AWS Bedrock (Claude or Titan):** For enterprise deployment, data residency in India
-- **Fallback:** Any LLM with code understanding capabilities (Gemini, Llama 3)
+**Why AI:**
+- Interprets unstructured natural language commit messages
+- Synthesizes patterns across multiple commits (e.g., "gradual migration over 8 commits")
+- Infers intent even when messages are brief ("perf fix" → "improved performance by...")
+- Understands code changes semantically, not just line diffs
 
-**Prompt Engineering Strategy:**
-- Use structured prompts with clear instructions and examples
-- Request JSON output for structured data (design decisions, related files)
-- Include source grounding: "Base your answer only on the provided commits"
-- Use temperature = 0.3 for consistency (low creativity, high accuracy)
-- Iterate prompts during development using Kiro AI assistance
+**Why Not Rules:**
+- Commit messages have infinite variation
+- No standard format or vocabulary
+- Regex patterns would miss 90% of meaningful decisions
+- Cannot reason about "why" from "what"
 
-### Responsible AI Behavior
+**Example:**
+- **Commits:** 
+  - "async refactor" (50 lines changed)
+  - "update callers" (30 lines changed)
+  - "remove old sync code" (20 lines changed)
+- **Rule-based:** Shows 3 separate commits
+- **AI-powered:** "Migrated from synchronous to asynchronous processing to improve API response time and handle concurrent requests"
 
-**RAI-1: Citation & Transparency**
-- Every design decision must cite commit hash(es) as evidence
-- Show which commits were analyzed (count, date range)
-- Make commit hashes clickable for verification
+---
 
-**RAI-2: Labeling**
-- Mark all AI-generated content with "✨ AI-generated" badge
-- Include disclaimer: "AI-generated insights may be incomplete. Always verify with source code."
+#### Task: Related File Recommendation
+**Input:** Imports + co-changed files  
+**Output:** 2-3 files with explanations
 
-**RAI-3: Handling Uncertainty**
-- When commit history is sparse (< 5 commits), say: "Limited commit history available"
-- When commit messages are uninformative ("fix", "update"), say: "Commit messages are brief; design decisions may be incomplete"
-- Never hallucinate or invent information not grounded in actual commits/code
+**Why AI:**
+- Understands conceptual relationships beyond imports
+- Ranks by relevance for learning (not just technical coupling)
+- Generates natural explanations ("This service calls UserRepository for database access")
+- Filters out false positives (files changed together for unrelated reasons)
 
-**RAI-4: Privacy & Data Handling**
-- Repository code is sent to LLM API only for analysis (no training, no storage)
-- No long-term storage of code or analysis results (optional 5-minute cache)
-- User must provide their own LLM API key (no shared keys)
-- Warn users if using cloud LLM APIs with proprietary code
+**Why Not Rules:**
+- Static analysis finds imports but misses semantic relationships
+- Co-change analysis produces false positives
+- Cannot explain "why" files are related
+- Cannot rank by learning value
 
-**RAI-5: Bias & Fairness**
-- Use simple, clear language accessible to non-native English speakers
-- Avoid cultural assumptions or jargon specific to Western tech companies
-- Test with codebases from Indian companies and colleges
+**Example:**
+- **Imports:** `UserRepository`, `Logger`, `Config`
+- **Co-changed:** `UserService`, `AuthMiddleware`, `database.sql`
+- **Rule-based:** Lists all 6 files
+- **AI-powered:** 
+  1. "UserRepository - This service calls it for database access"
+  2. "AuthMiddleware - Both handle user authentication"
+  3. "UserService - Tests this controller's endpoints"
+
+---
+
+### AI-3: Prompt Engineering Strategy
+
+#### Principle 1: Structured Prompts
+- Clear role definition: "You are helping a junior developer..."
+- Explicit task breakdown: "1. Summarize... 2. Extract decisions... 3. Suggest files..."
+- Output format specification: "Output JSON only, no markdown"
+
+#### Principle 2: Source Grounding
+- Provide all evidence in prompt (commits, code, imports)
+- Instruct: "Base your answer only on the provided commits"
+- Request citations: "Reference commit hashes for each decision"
+
+#### Principle 3: Uncertainty Handling
+- Instruct: "If commit messages are unclear, say 'Limited commit context available'"
+- Instruct: "Never invent information not present in commits"
+- Request confidence scores: "Assess your confidence: high/medium/low"
+
+#### Principle 4: Audience Adaptation
+- Specify: "Use simple language suitable for junior developers"
+- Specify: "Avoid jargon where possible"
+- Specify: "Explain concepts in plain language"
+
+#### Example Prompt Structure:
+```
+You are helping a junior developer in India understand a codebase.
+
+FILE: src/services/PaymentService.java
+CONTENT: [file content]
+
+RECENT COMMITS:
+- abc123 (2024-01-15): "Refactored to use async/await"
+- def456 (2024-02-20): "Added retry logic"
+
+TASKS:
+1. Summarize what this file does (2-3 sentences, simple language)
+2. Extract 2-3 key design decisions (cite commit hashes)
+3. Suggest 2-3 related files (explain why)
+
+IMPORTANT:
+- Be concise and clear
+- Admit uncertainty when evidence is weak
+- Reference actual commit hashes
+
+OUTPUT JSON:
+{
+  "summary": "...",
+  "decisions": [...],
+  "related_files": [...]
+}
+```
+
+---
+
+### AI-4: Model Selection
+
+**Current:** Groq llama-3.1-8b-instant
+
+**Rationale:**
+- Fast (< 2 seconds response time)
+- Good code understanding
+- Free tier with generous limits
+- OpenAI-compatible API
+
+**Alternatives:**
+- OpenAI GPT-3.5-turbo (slower, costs money, better quality)
+- OpenAI GPT-4 (much slower, expensive, best quality)
+- AWS Bedrock Claude (enterprise, data residency)
+
+**Configuration:** Via `.env` file, easy to swap models
+
+---
 
 ## Constraints & Assumptions
 
-**Constraints:**
-- **Single Repo Focus:** MVP supports one Git repository at a time (no multi-repo or monorepo support)
-- **Local Git Clone:** Repository must be cloned locally; no remote Git API access
-- **External LLM Dependency:** Requires API key for OpenAI, AWS Bedrock, or similar (subject to rate limits and costs)
-- **File-Level Analysis:** Focus on individual files, not cross-file architectural analysis
-- **Limited Resources:** Small team, limited time; prioritize core features over polish
+### Constraints
+- **Single Repository:** MVP analyzes one Git repo at a time
+- **Local Git Clone:** Repository must be cloned locally (no remote Git API)
+- **File-Level Analysis:** No cross-file architectural analysis
+- **External LLM:** Requires internet and API key (or mock mode)
+- **Text Files Only:** Binary files not supported
+- **Token Limits:** Very large files (> 10,000 lines) are truncated
 
-**Assumptions:**
-- Target repositories are Git-based with meaningful commit history (50+ commits)
-- Files are text-based code (Python, JavaScript, Java, TypeScript, Go) or config files
-- Users have VS Code installed and can install extensions locally
-- Backend runs locally (`localhost:8000`) or on accessible dev server
-- LLM API is available and responsive (< 5 seconds per request)
-- Users are comfortable with basic Git concepts (commits, diffs, branches)
-- Target audience: Indian developers with English proficiency (may not be native speakers)
+### Assumptions
+- Target repositories have meaningful commit history (50+ commits)
+- Commit messages are in English (or transliterated)
+- Users have VS Code installed and can install extensions
+- Backend runs locally or on accessible server
+- LLM API is available and responsive (< 5 seconds)
+- Users are comfortable with basic Git concepts
 
-**Out of Scope for MVP:**
-- Multi-language UI (English only for MVP; Hindi/regional languages in future)
-- Real-time collaboration or team features
-- Integration with Jira, Slack, or other tools
-- Caching beyond 5 minutes or persistent storage
-- Fine-tuned models or self-hosted LLMs
-- Support for non-Git VCS (SVN, Mercurial)
-- Comprehensive language support (focus on top 5 languages)
+### Out of Scope (MVP)
+- Multi-repo or monorepo support
+- Real-time collaboration features
+- Persistent storage or databases
+- Authentication or user management
+- Fine-tuned or self-hosted models
+- Support for non-Git version control
+- Multi-language UI (English only for MVP)
 
-**Development Context:**
-- Requirements and design documents generated with Kiro AI assistant
-- Backend and extension code may use AI-assisted development (Copilot, ChatGPT, Kiro)
-- Document AI assistance in README for transparency
+---
 
 ## Success Criteria
 
-The MVP is successful if:
+### Technical Success (MVP)
+✅ Backend starts without errors  
+✅ Extension loads in VS Code  
+✅ Command appears in Command Palette  
+✅ Analysis completes in < 15 seconds  
+✅ Results display in sidebar  
+✅ Commit hashes are clickable  
+✅ Related files are clickable  
+✅ Error messages are clear  
+✅ Works in mock mode (no API key)  
+✅ Works with real LLM (with API key)  
 
-1. **Functional:** A developer can right-click a file in VS Code and see all three insights (summary, design decisions, related files) in < 15 seconds
+### User Success (Validation)
+- **Accuracy:** 80%+ of summaries are helpful (manual review)
+- **Speed:** 5-10x faster than manual analysis (user survey)
+- **Adoption:** 5+ developers from target segment report value
+- **Learning:** Users understand files they couldn't before
 
-2. **Accurate:** AI-generated summaries are accurate and helpful when validated by manual review of 20 sample files from real Indian company codebases
+### Hackathon Success (Judging)
+- **AI Justification:** Judges understand why AI is essential
+- **India Impact:** Clear value for Indian students/devs
+- **Responsible AI:** Transparent, sourced, uncertainty-aware
+- **Demo Quality:** Works reliably during presentation
+- **Documentation:** Clear, comprehensive, well-organized
 
-3. **Grounded:** Design decisions include real commit references that can be verified; no hallucinated information
-
-4. **Relevant:** Related files are genuinely useful (at least 2/3 relevant per manual review by target users)
-
-5. **Reliable:** System handles edge cases gracefully (binary files, sparse history, large files) without crashes
-
-6. **Transparent:** Users understand which commits were analyzed and can verify AI claims
-
-7. **AI Justification:** Stakeholders (judges, users, investors) understand why AI is essential—not just convenient—for this product
-
-8. **User Validation:** 5+ developers from target segment (freshers, Tier-2/3 students, junior engineers) report that ContextWeave helps them understand code faster than existing tools
-
-## Target Impact (Qualitative)
-
-- **Learning Speed:** New developers understand unfamiliar files 5-10x faster (from 30 minutes to 3 minutes per file)
-- **Senior Dev Time:** Reduce "why was this built this way?" interruptions by 50%
-- **Confidence:** Junior developers feel more confident exploring codebases independently
-- **Onboarding:** New hires become productive 2-3 weeks faster
+---
 
 ## Development Approach
 
-**AI-Assisted Development:**
-- Use Kiro AI assistant to generate requirements.md and design.md
-- Use LLMs (ChatGPT, Claude, Copilot) to generate boilerplate code:
-  - FastAPI route scaffolding
-  - VS Code extension structure (package.json, activation events)
-  - TypeScript interfaces and types
-- Use AI to draft and refine LLM prompt templates for code analysis
-- Use AI to generate test cases and sample data
-- Document all AI assistance in README for transparency
+### AI-Assisted Development
+- **Kiro:** Used to generate requirements, design, and documentation
+- **LLMs:** Used to generate boilerplate code (FastAPI routes, TypeScript interfaces)
+- **Copilot:** Used for code completion and test generation
+- **Transparency:** All AI assistance documented in README
 
-**Iteration Strategy:**
-1. **Backend Core:** Implement file summary endpoint with basic LLM integration
-2. **Git Integration:** Add GitPython logic to extract commit history and diffs
-3. **Design Decisions:** Implement design decision extraction with prompt engineering
-4. **Related Files:** Add related file recommendation logic
-5. **VS Code Extension:** Build sidebar UI and backend integration
-6. **Polish:** Error handling, edge cases, UX improvements
-7. **Testing:** Validate with real codebases from Indian companies/colleges
-8. **Documentation:** README, setup guide, demo video
+### Iteration Strategy
+1. Backend core (Git analysis + mock mode)
+2. LLM integration (prompt engineering)
+3. VS Code extension (UI + commands)
+4. Error handling and edge cases
+5. Documentation and polish
+6. User testing with target segment
 
-**Testing Strategy:**
-- Unit tests for backend logic (GitPython integration, prompt formatting)
-- Manual testing with sample repositories:
-  - Large BFSI codebase (Java/Spring Boot)
-  - Node.js/React startup project
-  - Python data science project
-  - College project (PHP/MySQL)
-- User testing with 5+ developers from target segment
-- Edge case testing (binary files, sparse history, large files)
+---
 
-**Deployment Options:**
-- **Local:** Run backend with `uvicorn main:app --reload`
-- **AWS EC2/Lightsail:** Deploy backend on small instance (t3.micro)
-- **AWS Bedrock:** Use Bedrock for LLM inference (data residency in India)
-- **Docker:** Provide Dockerfile for easy deployment
-
-## Appendix: Technical Stack
-
-**Backend:**
-- Python 3.11+
-- FastAPI (web framework)
-- GitPython (Git operations)
-- OpenAI Python SDK (LLM API)
-- Pydantic (data validation)
-
-**Frontend:**
-- TypeScript
-- VS Code Extension API
-- Axios or fetch (HTTP client)
-- VS Code Webview API (sidebar rendering)
-
-**Development Tools:**
-- AI coding assistants (GitHub Copilot, ChatGPT, Claude)
-- Git for version control
-- Postman or curl for API testing
+**Document Version:** 1.0  
+**Last Updated:** February 7, 2026  
+**Status:** Ready for Implementation

@@ -81,25 +81,47 @@ async def analyze_file_context(request: ContextRequest):
     try:
         # Step 1: Validate inputs
         if not os.path.exists(request.repo_path):
-            raise HTTPException(status_code=400, detail=f"Repository path does not exist: {request.repo_path}")
+            logger.error(f"Repository path does not exist: {request.repo_path}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Repository path does not exist: {request.repo_path}"
+            )
         
         if not os.path.exists(request.file_path):
-            raise HTTPException(status_code=400, detail=f"File does not exist: {request.file_path}")
+            logger.error(f"File does not exist: {request.file_path}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"File does not exist: {request.file_path}"
+            )
         
         # Step 2: Get commit history for this file
         logger.info("Fetching commit history...")
-        commits = get_commit_history(
-            repo_path=request.repo_path,
-            file_path=request.file_path,
-            limit=request.commit_limit
-        )
-        
-        if not commits:
-            logger.warning("No commit history found for this file")
+        try:
+            commits = get_commit_history(
+                repo_path=request.repo_path,
+                file_path=request.file_path,
+                limit=request.commit_limit
+            )
+            
+            if not commits:
+                logger.warning("No commit history found for this file")
+        except ValueError as e:
+            logger.error(f"Git error: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Not a valid Git repository: {request.repo_path}"
+            )
         
         # Step 3: Read current file content
         logger.info("Reading file content...")
-        file_content = read_file_content(request.file_path)
+        try:
+            file_content = read_file_content(request.file_path)
+        except ValueError as e:
+            logger.error(f"File read error: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Could not read file: {str(e)}"
+            )
         
         # Step 4: Compute related files (imports + co-changed files)
         logger.info("Computing related files...")
@@ -119,14 +141,17 @@ async def analyze_file_context(request: ContextRequest):
             selected_code=request.selected_code
         )
         
-        logger.info("Analysis complete")
+        logger.info(f"Analysis complete. Analyzed {len(commits)} commits.")
         return response
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error analyzing file: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.error(f"Unexpected error analyzing file: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

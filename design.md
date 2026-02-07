@@ -1,1459 +1,793 @@
-# ContextWeave Lite - Design Document
+# ContextWeave Lite - Technical Design Document
+
+**Version:** 0.1.0 (MVP)  
+**Track:** AI for Bharat – AI for Learning & Developer Productivity  
+**Architecture:** VS Code Extension + FastAPI Backend + LLM API
+
+---
 
 ## High-Level Architecture
 
-ContextWeave Lite follows a client-server architecture where a VS Code extension communicates with a FastAPI backend that orchestrates Git analysis and LLM-powered reasoning.
+### System Overview
 
 ```
-┌─────────────────┐
-│   VS Code IDE   │
-│  ┌───────────┐  │
-│  │ Extension │  │ (TypeScript)
-│  │  + Sidebar│  │
-│  └─────┬─────┘  │
-└────────┼────────┘
-         │ HTTP/JSON
-         ▼
-┌─────────────────┐
-│  FastAPI Backend│ (Python 3.11)
-│  ┌───────────┐  │
-│  │ API Layer │  │
-│  └─────┬─────┘  │
-│        │        │
-│  ┌─────▼─────┐  │
-│  │Git Layer  │  │ (GitPython)
-│  │(commits,  │  │
-│  │ diffs)    │  │
-│  └─────┬─────┘  │
-│        │        │
-│  ┌─────▼─────┐  │
-│  │LLM Adapter│  │ (OpenAI/Bedrock)
-│  │(prompts,  │  │
-│  │ parsing)  │  │
-│  └───────────┘  │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│   LLM API       │ (OpenAI GPT-4 / AWS Bedrock)
-│ (Claude, GPT-4) │
-└─────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     VS Code IDE                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  ContextWeave Extension (TypeScript)                 │  │
+│  │  ┌────────────┐  ┌──────────────┐  ┌────────────┐  │  │
+│  │  │ Command    │  │ API Client   │  │  Sidebar   │  │  │
+│  │  │ Handler    │─▶│ (HTTP)       │  │  Webview   │  │  │
+│  │  └────────────┘  └──────┬───────┘  └────────────┘  │  │
+│  └─────────────────────────┼──────────────────────────┘  │
+└────────────────────────────┼─────────────────────────────┘
+                             │
+                             │ HTTP POST /context/file
+                             │ JSON Request/Response
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              FastAPI Backend (Python 3.11)                  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  API Layer (main.py)                                 │  │
+│  │  - Request validation                                │  │
+│  │  - Orchestration                                     │  │
+│  │  - Response formatting                               │  │
+│  └──────────────────┬───────────────────────────────────┘  │
+│                     │                                       │
+│  ┌──────────────────▼───────────────────────────────────┐  │
+│  │  Git Analysis Layer (git_utils.py)                   │  │
+│  │  DETERMINISTIC - No AI                               │  │
+│  │  - Extract commit history                            │  │
+│  │  - Parse imports                                     │  │
+│  │  - Find co-changed files                            │  │
+│  │  - Read file content                                │  │
+│  └──────────────────┬───────────────────────────────────┘  │
+│                     │                                       │
+│  ┌──────────────────▼───────────────────────────────────┐  │
+│  │  LLM Integration Layer (llm_client.py)               │  │
+│  │  AI-POWERED - Reasoning & NLG                        │  │
+│  │  - Build structured prompts                          │  │
+│  │  - Call LLM API                                      │  │
+│  │  - Parse JSON responses                              │  │
+│  │  - Handle errors & fallbacks                         │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                     │
+                     │ HTTPS API Call
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│              LLM API Provider                               │
+│         (Groq / OpenAI / AWS Bedrock)                       │
+│         Model: llama-3.1-8b-instant                         │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Component Overview
+### Component Responsibilities
 
-**VS Code Extension (Client)**
-- Provides UI commands and context menu integration
-- Renders sidebar webview with analysis results
-- Manages state (loading, error, success)
-- Handles user interactions (click commit hash, open related file)
+**VS Code Extension:**
+- User interface and command registration
+- Workspace and file path detection
+- HTTP communication with backend
+- Result rendering in sidebar webview
+- Error handling and user feedback
 
-**FastAPI Backend (Server)**
-- Exposes REST API endpoints for file analysis
-- Orchestrates Git queries and LLM calls
-- Implements caching and error handling
-- Can run locally or on AWS (EC2/Lightsail)
+**FastAPI Backend:**
+- API endpoint exposure and request validation
+- Orchestration of Git analysis and LLM calls
+- Response formatting and error handling
+- Configuration management (environment variables)
 
-**Git Layer (GitPython)**
-- Deterministic logic: queries commit history, diffs, file metadata
-- Extracts structured data: commit messages, authors, dates, changed lines
-- Computes simple heuristics: imports, co-changed files
+**Git Analysis Layer (Deterministic):**
+- Pure data extraction, no interpretation
+- Commit history querying
+- Import statement parsing
+- Co-change frequency analysis
+- File content reading
 
-**LLM Adapter**
-- AI logic: interprets natural language, infers intent, synthesizes explanations
-- Formats prompts with context (code + commits)
-- Parses LLM responses into structured JSON
-- Handles rate limits, retries, and fallbacks
+**LLM Integration Layer (AI-Powered):**
+- Natural language understanding
+- Reasoning and synthesis
+- Human-readable text generation
+- Uncertainty handling
+- Source grounding
 
+---
 
 ## Data Flow
 
 ### Flow 1: "Explain this file"
 
-**User Action:** Right-click a file in VS Code → "Analyze with ContextWeave"
+**User Action:** Right-click file → "ContextWeave: Explain this file"
 
-**Step-by-step:**
+**Step-by-Step:**
 
-1. **VS Code Extension**
-   - Detects active file path: `src/services/PaymentService.java`
-   - Finds Git repo root: `/home/user/banking-app`
-   - Sends POST request to backend: `http://localhost:8000/api/context/file`
-   - Request body:
-     ```json
-     {
-       "repo_path": "/home/user/banking-app",
-       "file_path": "src/services/PaymentService.java"
-     }
-     ```
+1. **VS Code Extension (extension.ts)**
+   ```typescript
+   // Detect file and repo
+   const filePath = editor.document.uri.fsPath;
+   const repoPath = findGitRepoRoot(filePath);
+   const selectedCode = getSelectedText();
+   
+   // Call backend
+   const response = await axios.post(`${backendUrl}/context/file`, {
+     repo_path: repoPath,
+     file_path: filePath,
+     selected_code: selectedCode,
+     commit_limit: 50
+   });
+   ```
 
-2. **Backend API Layer**
-   - Validates inputs (file exists, is in Git repo)
-   - Checks cache (5-minute TTL, keyed by file path + latest commit hash)
-   - If cache miss, proceeds to Git layer
+2. **Backend API Layer (main.py)**
+   ```python
+   @app.post("/context/file")
+   async def analyze_file_context(request: ContextRequest):
+       # Validate inputs
+       validate_git_repo(request.repo_path)
+       validate_file_exists(request.file_path)
+       
+       # Get Git data (deterministic)
+       commits = get_commit_history(request.repo_path, request.file_path)
+       file_content = read_file_content(request.file_path)
+       related_files = get_related_files(request.repo_path, request.file_path)
+       
+       # Call LLM (AI-powered)
+       response = await analyze_file_with_llm(
+           file_content, commits, related_files, request.selected_code
+       )
+       
+       return response
+   ```
 
-3. **Git Layer (Deterministic)**
-   - Reads file content from disk
-   - Queries Git history: `git log --follow -n 50 -- <file_path>`
-   - Extracts for each commit:
-     - Commit hash, author, date, message
-     - Diff (lines added/removed)
-   - Computes related files:
-     - Parse imports from file content (regex/AST)
-     - Query co-changed files: `git log --name-only --follow -- <file_path>`
-     - Rank by co-change frequency
+3. **Git Analysis Layer (git_utils.py)**
+   ```python
+   def get_commit_history(repo_path, file_path, limit=50):
+       repo = Repo(repo_path)
+       relative_path = os.path.relpath(file_path, repo_path)
+       commits = repo.iter_commits(paths=relative_path, max_count=limit)
+       
+       return [{
+           "hash": commit.hexsha[:7],
+           "author": commit.author.name,
+           "date": commit.committed_datetime.isoformat(),
+           "message": commit.message.strip(),
+           "lines_changed": calculate_diff_stats(commit, relative_path)
+       } for commit in commits]
+   ```
 
-4. **LLM Adapter (AI Logic)**
-   - Constructs prompt with:
-     - File content (truncated to 8000 tokens if needed)
-     - Last 20 commits (messages + diffs)
-     - Metadata (language, file size)
-   - Calls LLM API (OpenAI GPT-4 or AWS Bedrock Claude)
-   - Prompt structure:
-     ```
-     You are helping a junior developer understand a codebase.
-     
-     File: src/services/PaymentService.java
-     Content: [file content]
-     
-     Recent commits (last 20):
-     - abc123 (2024-01-15, Priya): "Refactored to use async/await"
-       Diff: [diff]
-     - def456 (2024-02-20, Arjun): "Added retry logic for failed payments"
-       Diff: [diff]
-     ...
-     
-     Tasks:
-     1. Summarize what this file does in 2-3 sentences (simple language).
-     2. Extract 2-3 key design decisions from commits. For each:
-        - Decision description (1-2 sentences)
-        - Commit hash(es) as evidence
-        - Why this decision matters
-     3. If evidence is weak, say "Limited commit history" instead of guessing.
-     
-     Output JSON:
-     {
-       "summary": "...",
-       "design_decisions": [
-         {"decision": "...", "commits": ["abc123"], "reasoning": "..."}
-       ],
-       "confidence": "high" | "medium" | "low"
-     }
-     ```
-   - Parses JSON response, validates structure
+4. **LLM Integration Layer (llm_client.py)**
+   ```python
+   async def analyze_file_with_llm(file_content, commits, related_files, selected_code):
+       # Build prompt
+       prompt = build_analysis_prompt(file_content, commits, related_files, selected_code)
+       
+       # Call LLM API
+       response = await call_llm_api(prompt)
+       
+       # Parse JSON
+       return parse_llm_response(response)
+   ```
 
-5. **Backend Response**
-   - Combines LLM output with related files (from Git layer)
-   - Returns JSON:
-     ```json
-     {
-       "summary": "This file handles payment processing...",
-       "design_decisions": [
-         {
-           "decision": "Refactored to async/await for better performance",
-           "commits": ["abc123"],
-           "reasoning": "Reduces blocking I/O during payment gateway calls"
-         }
-       ],
-       "related_files": [
-         {
-           "path": "src/repositories/PaymentRepository.java",
-           "relationship": "This service calls PaymentRepository for database access"
-         }
-       ],
-       "metadata": {
-         "commits_analyzed": 20,
-         "date_range": "2023-01-15 to 2024-12-20",
-         "confidence": "high"
-       }
-     }
-     ```
+5. **VS Code Extension (sidebarProvider.ts)**
+   ```typescript
+   // Render results in sidebar
+   showResult(response) {
+       this.webview.html = `
+           <h3>📄 What this file does</h3>
+           <p>${response.summary}</p>
+           
+           <h3>🔍 Key design decisions</h3>
+           ${response.decisions.map(d => `
+               <div>
+                   <h4>${d.title}</h4>
+                   <p>${d.description}</p>
+                   <span>${d.commits.join(', ')}</span>
+               </div>
+           `).join('')}
+           
+           <h3>📚 You should also read</h3>
+           ${response.related_files.map(rf => `
+               <a href="${rf.path}">${rf.path}</a>
+               <p>${rf.reason}</p>
+           `).join('')}
+       `;
+   }
+   ```
 
-6. **VS Code Extension**
-   - Receives response, updates sidebar UI
-   - Renders three sections:
-     - "What this file does" (summary)
-     - "Key design decisions" (with clickable commit hashes)
-     - "You should also read" (related files)
-   - Shows metadata footer: "Based on 20 commits from Jan 2023 to Dec 2024"
-
-### Flow 2: "Why is this weird?" (Selected Code Region)
-
-**User Action:** Select 5-10 lines of code → Right-click → "ContextWeave: Explain this code"
-
-**Step-by-step:**
-
-1. **VS Code Extension**
-   - Captures selected text and line range
-   - Sends POST request: `http://localhost:8000/api/context/explain-code`
-   - Request body:
-     ```json
-     {
-       "repo_path": "/home/user/banking-app",
-       "file_path": "src/services/PaymentService.java",
-       "code_snippet": "if (amount < 0) { amount = Math.abs(amount); }",
-       "line_start": 45,
-       "line_end": 47
-     }
-     ```
-
-2. **Backend Git Layer**
-   - Queries commits that touched these specific lines: `git log -L 45,47:<file_path>`
-   - Extracts commit messages and diffs for context
-
-3. **LLM Adapter**
-   - Constructs prompt:
-     ```
-     A junior developer is confused by this code snippet.
-     Explain why it might be written this way.
-     
-     File: src/services/PaymentService.java
-     Lines 45-47:
-     if (amount < 0) { amount = Math.abs(amount); }
-     
-     Commits that touched these lines:
-     - xyz789 (2023-06-10): "Handle negative amounts from legacy API"
-       Diff: [diff]
-     
-     Task: Explain in 2-3 sentences why this code exists.
-     If you don't know, say "No clear explanation in commit history."
-     ```
-   - Parses response
-
-4. **Backend Response**
-   - Returns explanation:
-     ```json
-     {
-       "explanation": "This handles negative amounts from a legacy API that sometimes returns negative values. The code converts them to positive to avoid downstream errors.",
-       "commits": ["xyz789"],
-       "confidence": "medium"
-     }
-     ```
-
-5. **VS Code Extension**
-   - Shows explanation in a hover tooltip or sidebar panel
-   - Includes commit reference for verification
-
+---
 
 ## Backend Design
 
-### API Endpoints
+### API Layer (main.py)
 
-**POST /api/context/file**
-- **Purpose:** Analyze a file and return summary, design decisions, related files
-- **Input:**
-  ```json
-  {
-    "repo_path": "/absolute/path/to/repo",
-    "file_path": "relative/path/to/file.py",
-    "commit_limit": 50  // optional, default 50
-  }
-  ```
-- **Output:** See Flow 1 response above
-- **Caching:** 5-minute TTL, keyed by `(file_path, latest_commit_hash)`
-- **Error Codes:**
-  - 400: Invalid input (file not found, not in Git repo)
-  - 429: LLM API rate limit exceeded
-  - 500: Internal error (Git failure, LLM timeout)
+**Responsibilities:**
+- HTTP request/response handling
+- Input validation (Pydantic schemas)
+- Orchestration of Git analysis and LLM calls
+- Error handling and logging
+- CORS configuration for VS Code extension
 
-**POST /api/context/explain-code**
-- **Purpose:** Explain a selected code snippet
-- **Input:**
-  ```json
-  {
-    "repo_path": "/absolute/path/to/repo",
-    "file_path": "relative/path/to/file.py",
-    "code_snippet": "selected code",
-    "line_start": 10,
-    "line_end": 15
-  }
-  ```
-- **Output:** See Flow 2 response above
+**Key Endpoints:**
 
-**GET /api/health**
-- **Purpose:** Health check for backend and LLM API connectivity
-- **Output:**
-  ```json
-  {
-    "status": "healthy",
-    "llm_api": "connected",
-    "version": "0.1.0"
-  }
-  ```
+1. **GET /** - Health check
+   - Returns service status and version
+   - No authentication required
 
-### Git Layer Implementation
+2. **GET /health** - Detailed health check
+   - Returns LLM configuration status
+   - Used by extension to verify backend connectivity
 
-**Commit History Fetching**
+3. **POST /context/file** - Main analysis endpoint
+   - Validates repo_path and file_path
+   - Orchestrates Git analysis → LLM call → response formatting
+   - Returns structured ContextResponse
 
-```python
-# Pseudocode
-def get_commit_history(repo_path: str, file_path: str, limit: int = 50):
-    repo = git.Repo(repo_path)
-    commits = list(repo.iter_commits(paths=file_path, max_count=limit))
-    
-    result = []
-    for commit in commits:
-        # Get diff for this file
-        if commit.parents:
-            diff = commit.parents[0].diff(commit, paths=file_path)
-        else:
-            diff = None  # Initial commit
-        
-        result.append({
-            "hash": commit.hexsha[:7],
-            "author": commit.author.name,
-            "date": commit.committed_datetime.isoformat(),
-            "message": commit.message.strip(),
-            "diff": extract_diff_text(diff) if diff else None,
-            "lines_changed": count_lines_changed(diff) if diff else 0
-        })
-    
-    # Sort by recency (most recent first)
-    return result
-```
+**Error Handling:**
+- 400: Invalid inputs (missing paths, not a Git repo)
+- 500: Internal errors (Git failures, LLM timeouts)
+- All errors include actionable messages
 
-**Filtering Strategy:**
-- Take last 50 commits by default (configurable)
-- Prioritize commits with meaningful messages (> 10 characters, not just "fix" or "update")
-- Prioritize commits with larger diffs (more lines changed = more significant)
-- For LLM input, send top 20 commits (balance context vs token cost)
+**Configuration:**
+- Loads environment variables from `.env` file
+- PORT (default: 8000)
+- LLM_API_KEY, LLM_API_BASE, LLM_MODEL
 
-**Related Files Computation**
+---
 
-```python
-# Pseudocode
-def get_related_files(repo_path: str, file_path: str):
-    # 1. Parse imports (deterministic)
-    imports = parse_imports(file_path)  # regex or AST
-    
-    # 2. Co-changed files (deterministic)
-    repo = git.Repo(repo_path)
-    commits = repo.iter_commits(paths=file_path, max_count=100)
-    
-    co_changed = Counter()
-    for commit in commits:
-        changed_files = [item.a_path for item in commit.stats.files.keys()]
-        for f in changed_files:
-            if f != file_path:
-                co_changed[f] += 1
-    
-    # 3. Combine and rank
-    related = []
-    for imp in imports[:5]:  # Top 5 imports
-        related.append({"path": imp, "score": 10, "type": "import"})
-    
-    for f, count in co_changed.most_common(5):
-        related.append({"path": f, "score": count, "type": "co-changed"})
-    
-    # Sort by score, return top 3
-    related.sort(key=lambda x: x["score"], reverse=True)
-    return related[:3]
-```
+### Git Analysis Layer (git_utils.py)
 
-**Why this is deterministic (not AI):**
-- Import parsing uses regex or AST (no interpretation needed)
-- Co-change frequency is a simple count (no reasoning)
-- Ranking is by score (no semantic understanding)
+**Responsibilities:**
+- Pure data extraction (no AI, no interpretation)
+- Commit history querying
+- Import statement parsing
+- Co-change frequency analysis
+- File content reading
 
-**AI layer adds value by:**
-- Explaining *why* files are related ("This service calls that repository")
-- Filtering out false positives (files changed together for unrelated reasons)
+**Key Functions:**
 
-### LLM Integration
+1. **get_commit_history(repo_path, file_path, limit)**
+   - Uses GitPython to query commits
+   - Returns list of commit dicts with hash, author, date, message, lines_changed
+   - Handles edge cases: no commits, new files, binary files
 
-**Prompt Design Principles**
+2. **get_related_files(repo_path, file_path, file_content)**
+   - Combines import detection and co-change analysis
+   - Returns dict with 'imports' and 'co_changed' lists
+   - Top 5 of each type
 
-1. **Conciseness:** Request 2-3 sentences, not paragraphs
-2. **Evidence-based:** Provide commits as context, ask for citations
-3. **Uncertainty handling:** Explicitly ask model to say "limited evidence" when appropriate
-4. **Structured output:** Request JSON for easy parsing
-5. **Audience-aware:** Specify "junior developer" or "student" as audience
+3. **extract_imports(file_content, file_path)**
+   - Language-aware import parsing (Python, JS/TS, Java)
+   - Uses regex patterns for each language
+   - Returns list of imported file paths
 
-**Example Prompt Template (File Summary)**
+4. **find_co_changed_files(repo_path, relative_path, limit)**
+   - Analyzes last N commits touching the file
+   - Counts how often other files appear in same commits
+   - Returns top 10 files by frequency
 
-```python
-PROMPT_TEMPLATE = """
-You are helping a junior developer in India understand a codebase.
-They are new to this project and need clear, simple explanations.
+5. **read_file_content(file_path, max_lines)**
+   - Reads file with UTF-8 encoding
+   - Truncates very large files (> 10,000 lines)
+   - Handles encoding errors gracefully
 
-File: {file_path}
-Language: {language}
-Content:
-{file_content}
+**Design Rationale:**
+- Deterministic layer provides structured data for LLM
+- No interpretation or reasoning at this layer
+- Fast and reliable (no API calls)
+- Can be tested independently of LLM
 
-Recent commits (last {commit_count}):
-{commit_history}
+---
 
-Tasks:
-1. Summarize what this file does in 2-3 sentences.
-   - Use simple language (avoid jargon where possible)
-   - Focus on the main purpose and responsibilities
-   
-2. Extract 2-3 key design decisions from the commit history.
-   - For each decision:
-     * Describe the decision in 1-2 sentences
-     * Cite the commit hash(es) as evidence
-     * Explain why this decision matters (performance, maintainability, etc.)
-   - If commit messages are unclear or too brief, say "Limited commit context available"
-   
-3. Assess your confidence:
-   - "high" if commits are detailed and code is clear
-   - "medium" if commits are brief but code is understandable
-   - "low" if commits are sparse or code is ambiguous
+### LLM Integration Layer (llm_client.py)
 
-Output JSON only (no markdown):
-{{
-  "summary": "...",
-  "design_decisions": [
-    {{"decision": "...", "commits": ["abc123"], "reasoning": "..."}}
-  ],
-  "confidence": "high" | "medium" | "low"
-}}
-"""
-```
+**Responsibilities:**
+- Prompt construction
+- LLM API communication
+- Response parsing and validation
+- Fallback to mock mode on errors
 
-**LLM API Call**
+**Key Functions:**
 
-```python
-# Pseudocode
-async def call_llm(prompt: str, model: str = "gpt-4"):
-    try:
-        response = await openai.ChatCompletion.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are a code analysis assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.3,  # Low creativity, high consistency
-            max_tokens=1000,
-            timeout=10  # 10 second timeout
-        )
-        
-        content = response.choices[0].message.content
-        return json.loads(content)
-    
-    except openai.error.RateLimitError:
-        raise HTTPException(429, "LLM API rate limit exceeded")
-    except openai.error.Timeout:
-        raise HTTPException(504, "LLM API timeout")
-    except json.JSONDecodeError:
-        # Fallback: return raw text
-        return {"summary": content, "design_decisions": [], "confidence": "low"}
-```
+1. **analyze_file_with_llm(...)**
+   - Main entry point for LLM analysis
+   - Checks if LLM_API_KEY is configured
+   - Falls back to mock mode if not configured or on error
+   - Returns ContextResponse
 
-**Caching Strategy**
+2. **build_analysis_prompt(...)**
+   - Constructs structured prompt with:
+     - File path and content (truncated if needed)
+     - Last 20 commits (formatted)
+     - Related files data
+     - Selected code (if provided)
+   - Includes instructions for JSON output
+   - Emphasizes: simple language, cite commits, admit uncertainty
 
-```python
-# Pseudocode
-cache = {}  # In-memory cache (or Redis for production)
+3. **call_llm(prompt)**
+   - Makes HTTP POST to OpenAI-compatible API
+   - Uses chat completions format
+   - Temperature: 0.3 (low creativity)
+   - Max tokens: 1500
+   - Timeout: 30 seconds
+   - Parses JSON from response (handles markdown code blocks)
 
-def get_cached_analysis(file_path: str, latest_commit_hash: str):
-    cache_key = f"{file_path}:{latest_commit_hash}"
-    
-    if cache_key in cache:
-        entry = cache[cache_key]
-        if time.now() - entry["timestamp"] < 300:  # 5 minutes
-            return entry["data"]
-    
-    return None
+4. **parse_llm_response(llm_response, commits, related_files_data)**
+   - Extracts fields from LLM JSON
+   - Creates ContextResponse with Pydantic models
+   - Adds metadata (commits analyzed, model name)
 
-def set_cached_analysis(file_path: str, latest_commit_hash: str, data: dict):
-    cache_key = f"{file_path}:{latest_commit_hash}"
-    cache[cache_key] = {
-        "data": data,
-        "timestamp": time.now()
-    }
-```
+5. **create_mock_response(...)**
+   - Generates deterministic response when LLM unavailable
+   - Uses only Git data (no AI)
+   - Includes warning: "Configure LLM_API_KEY for AI analysis"
+   - Useful for testing and demos without API key
 
-**Why caching matters:**
-- Reduces LLM API costs (OpenAI charges per token)
-- Improves latency (5 seconds → instant for repeated requests)
-- Keyed by commit hash ensures freshness (invalidates on new commits)
+**Prompt Engineering Strategy:**
+- Clear role: "You are helping a junior developer..."
+- Structured tasks: numbered list of what to do
+- Source grounding: all evidence provided in prompt
+- Uncertainty handling: "Admit when evidence is weak"
+- Audience adaptation: "Use simple language"
+- Output format: "JSON only, no markdown"
 
-### Error Handling
+**Error Handling:**
+- Invalid API key → Mock mode
+- Rate limit → Mock mode
+- Timeout → Mock mode
+- Parse error → Mock mode
+- All errors logged with details
 
-**Git Errors:**
-- File not found → 400 with message: "File not found in repository"
-- Not a Git repo → 400 with message: "Directory is not a Git repository"
-- No commit history → Return summary only, skip design decisions
-
-**LLM Errors:**
-- Rate limit → 429 with retry-after header
-- Timeout → 504 with message: "LLM API timeout, try again"
-- Invalid JSON → Fallback to raw text response, log warning
-
-**Edge Cases:**
-- Binary file → 400 with message: "Binary files not supported"
-- File > 10,000 lines → Truncate to first 8,000 tokens, add note in response
-- Empty file → Return: "This file is empty"
-
+---
 
 ## VS Code Extension Design
 
-### Activation & Discovery
+### Extension Entry Point (extension.ts)
 
-**Activation Events**
-```json
-// package.json
-{
-  "activationEvents": [
-    "onCommand:contextweave.analyzeFile",
-    "onCommand:contextweave.explainCode",
-    "onView:contextweave.sidebar"
-  ]
-}
-```
+**Responsibilities:**
+- Extension activation and lifecycle
+- Command registration
+- Sidebar provider initialization
+- Workspace and file detection
+- Backend communication orchestration
 
-**Commands:**
-- `contextweave.analyzeFile` - Analyze current file
-- `contextweave.explainCode` - Explain selected code region
-- `contextweave.openSettings` - Configure backend URL, API key
+**Key Functions:**
 
-**Context Menu Integration:**
-```json
-// package.json contributions
-{
-  "menus": {
-    "explorer/context": [
-      {
-        "command": "contextweave.analyzeFile",
-        "when": "resourceScheme == file",
-        "group": "navigation"
-      }
-    ],
-    "editor/context": [
-      {
-        "command": "contextweave.explainCode",
-        "when": "editorHasSelection",
-        "group": "navigation"
-      }
-    ]
-  }
-}
-```
+1. **activate(context)**
+   - Registers sidebar provider
+   - Registers command: `contextweave.explainFile`
+   - Adds subscriptions to context
 
-**Repo Root Discovery**
+2. **handleExplainFile()**
+   - Gets active editor and file path
+   - Detects workspace folder (repo root)
+   - Gets selected code if any
+   - Shows sidebar and loading state
+   - Calls backend API via apiClient
+   - Shows results or error in sidebar
 
-```typescript
-// Pseudocode
-async function findRepoRoot(filePath: string): Promise<string | null> {
-  // Use VS Code Git extension API
-  const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
-  const git = gitExtension.getAPI(1);
-  
-  // Find repository containing this file
-  const repo = git.repositories.find(r => 
-    filePath.startsWith(r.rootUri.fsPath)
-  );
-  
-  return repo ? repo.rootUri.fsPath : null;
-}
-```
+3. **getBackendUrl()**
+   - Reads from VS Code settings
+   - Default: `http://localhost:8000`
+   - Configurable per workspace
 
-### Backend Communication
+**Error Handling:**
+- No active file → Show error message
+- File not in workspace → Show error message
+- Backend connection refused → Show clear message with backend URL
+- Backend error → Show backend error detail
+- Network timeout → Show timeout message
 
-**API Client**
+---
+
+### API Client (apiClient.ts)
+
+**Responsibilities:**
+- HTTP communication with backend
+- Request/response type definitions
+- Configuration management
+
+**Key Types:**
 
 ```typescript
-// Pseudocode
-class ContextWeaveClient {
-  private baseUrl: string;
-  
-  constructor() {
-    // Read from VS Code settings
-    const config = vscode.workspace.getConfiguration('contextweave');
-    this.baseUrl = config.get('backendUrl', 'http://localhost:8000');
-  }
-  
-  async analyzeFile(repoPath: string, filePath: string): Promise<AnalysisResult> {
-    const response = await fetch(`${this.baseUrl}/api/context/file`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_path: repoPath, file_path: filePath })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Backend error: ${response.status}`);
-    }
-    
-    return await response.json();
-  }
-  
-  async explainCode(
-    repoPath: string, 
-    filePath: string, 
-    snippet: string, 
-    lineStart: number, 
-    lineEnd: number
-  ): Promise<ExplanationResult> {
-    // Similar to analyzeFile
-  }
-}
-```
-
-**Loading States**
-
-```typescript
-// Pseudocode
-async function handleAnalyzeFile() {
-  const editor = vscode.window.activeTextEditor;
-  if (!editor) return;
-  
-  const filePath = editor.document.uri.fsPath;
-  const repoPath = await findRepoRoot(filePath);
-  
-  if (!repoPath) {
-    vscode.window.showErrorMessage('File is not in a Git repository');
-    return;
-  }
-  
-  // Show loading in sidebar
-  sidebarView.showLoading('Analyzing file...');
-  
-  try {
-    const result = await client.analyzeFile(repoPath, filePath);
-    sidebarView.showResult(result);
-  } catch (error) {
-    if (error.status === 429) {
-      vscode.window.showErrorMessage('Rate limit exceeded. Try again in a minute.');
-    } else {
-      vscode.window.showErrorMessage(`Analysis failed: ${error.message}`);
-    }
-    sidebarView.showError(error);
-  }
-}
-```
-
-### Sidebar UI Design
-
-**Layout Structure**
-
-```
-┌─────────────────────────────────┐
-│ ContextWeave Insights           │
-├─────────────────────────────────┤
-│ 📄 PaymentService.java          │
-│                                 │
-│ ✨ What this file does          │
-│ ─────────────────────────────── │
-│ This file handles payment       │
-│ processing for the banking app. │
-│ It validates transactions and   │
-│ communicates with the payment   │
-│ gateway API.                    │
-│                                 │
-│ 🔍 Key design decisions         │
-│ ─────────────────────────────── │
-│ • Refactored to async/await     │
-│   for better performance        │
-│   📎 abc123 (Jan 15, 2024)      │
-│                                 │
-│ • Added retry logic for failed  │
-│   payments to handle timeouts   │
-│   📎 def456 (Feb 20, 2024)      │
-│                                 │
-│ 📚 You should also read         │
-│ ─────────────────────────────── │
-│ • PaymentRepository.java        │
-│   This service calls this repo  │
-│   for database access           │
-│                                 │
-│ • PaymentConfig.java            │
-│   Configuration for payment     │
-│   gateway settings              │
-│                                 │
-├─────────────────────────────────┤
-│ ℹ️ Based on 20 commits          │
-│    Jan 2023 - Dec 2024          │
-│    Confidence: High             │
-│                                 │
-│ ⚠️ AI-generated insights may be │
-│    incomplete. Verify sources.  │
-└─────────────────────────────────┘
-```
-
-**Webview Implementation**
-
-```typescript
-// Pseudocode
-class SidebarProvider implements vscode.WebviewViewProvider {
-  resolveWebviewView(webviewView: vscode.WebviewView) {
-    webviewView.webview.options = {
-      enableScripts: true
+interface AnalysisResult {
+    summary: string;
+    decisions: DesignDecision[];
+    related_files: RelatedFile[];
+    weird_code_explanation?: string;
+    metadata: {
+        commits_analyzed: number;
+        llm_configured?: boolean;
+        mock_response?: boolean;
     };
-    
-    webviewView.webview.html = this.getHtmlContent();
-    
-    // Handle messages from webview
-    webviewView.webview.onDidReceiveMessage(message => {
-      switch (message.type) {
-        case 'openCommit':
-          this.openCommitInGitHistory(message.hash);
-          break;
-        case 'openFile':
-          this.openRelatedFile(message.path);
-          break;
-      }
-    });
-  }
-  
-  private getHtmlContent(): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { 
-            font-family: var(--vscode-font-family);
-            color: var(--vscode-foreground);
-            padding: 16px;
-          }
-          .section { margin-bottom: 24px; }
-          .section-title { 
-            font-weight: bold; 
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-          }
-          .commit-link {
-            color: var(--vscode-textLink-foreground);
-            cursor: pointer;
-            text-decoration: none;
-          }
-          .commit-link:hover {
-            text-decoration: underline;
-          }
-          .ai-badge {
-            background: var(--vscode-badge-background);
-            color: var(--vscode-badge-foreground);
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 11px;
-            margin-left: 8px;
-          }
-          .footer {
-            font-size: 12px;
-            color: var(--vscode-descriptionForeground);
-            border-top: 1px solid var(--vscode-panel-border);
-            padding-top: 12px;
-            margin-top: 24px;
-          }
-        </style>
-      </head>
-      <body>
-        <div id="content">Loading...</div>
-        <script>
-          const vscode = acquireVsCodeApi();
-          
-          function openCommit(hash) {
-            vscode.postMessage({ type: 'openCommit', hash });
-          }
-          
-          function openFile(path) {
-            vscode.postMessage({ type: 'openFile', path });
-          }
-        </script>
-      </body>
-      </html>
-    `;
-  }
-  
-  showResult(result: AnalysisResult) {
-    // Update webview content with result
-    this.webview.postMessage({ type: 'showResult', data: result });
-  }
 }
 ```
 
-**UX Principles for Learning**
-
-1. **5-Second Comprehension:** Use clear headings, short paragraphs, bullet points
-2. **Visual Hierarchy:** Icons (✨ 🔍 📚) help scan sections quickly
-3. **Clickable Evidence:** Commit hashes are links, not just text
-4. **Simple Language:** Avoid jargon; explain in terms a student would understand
-5. **Transparency:** Always show AI badge and disclaimer
-6. **Progressive Disclosure:** Collapsible sections for advanced details
-
-### Settings & Configuration
-
-**User Settings (settings.json)**
-
-```json
-{
-  "contextweave.backendUrl": "http://localhost:8000",
-  "contextweave.commitLimit": 50,
-  "contextweave.autoAnalyze": false,  // Auto-analyze on file open
-  "contextweave.showConfidence": true  // Show confidence scores
-}
-```
-
-**Settings UI (package.json)**
-
-```json
-{
-  "contributes": {
-    "configuration": {
-      "title": "ContextWeave",
-      "properties": {
-        "contextweave.backendUrl": {
-          "type": "string",
-          "default": "http://localhost:8000",
-          "description": "URL of the ContextWeave backend server"
-        },
-        "contextweave.commitLimit": {
-          "type": "number",
-          "default": 50,
-          "description": "Number of commits to analyze (max 100)"
-        }
-      }
-    }
-  }
-}
-```
-
-
-## AI Design
-
-### Why LLMs are Required (Not Rule-Based Systems)
-
-**The Core Problem: Natural Language Understanding + Reasoning**
-
-Rule-based systems excel at deterministic tasks (parsing syntax, counting lines, sorting data) but fail at:
-
-1. **Interpreting Noisy Natural Language**
-   - Commit messages are inconsistent: "fix bug", "refactored for perf", "updated logic", "asdfasdf"
-   - No standard format or vocabulary
-   - Typos, abbreviations, context-dependent meaning
-   - Example: "migrated to async" vs "made it faster" vs "fixed blocking issue" all mean similar things
-
-2. **Synthesizing Multiple Signals**
-   - A design decision often spans 5-10 commits over weeks
-   - Need to merge "added async method" + "refactored callers" + "removed old sync code" into one narrative
-   - Rule-based systems would need complex graph analysis and hardcoded heuristics for every pattern
-
-3. **Inferring Intent and Tradeoffs**
-   - Why was async chosen over sync? (Performance vs complexity tradeoff)
-   - Why was this library replaced? (Security, maintenance, licensing)
-   - Rules can't infer "why" from "what"—they lack reasoning capability
-
-4. **Explaining Code Semantically**
-   - "This is a repository pattern" requires understanding design patterns across languages
-   - "This handles edge case X" requires understanding business logic, not just syntax
-   - Rules would need language-specific parsers + pattern databases for every framework
-
-5. **Adapting to Audience**
-   - Junior developers need simpler explanations than senior engineers
-   - Students need more context than experienced professionals
-   - LLMs can adjust tone and detail level; templates cannot
-
-**What Happens Without AI:**
-
-Without LLMs, ContextWeave becomes a glorified commit browser:
-- Shows raw commit messages (no synthesis)
-- Lists files that changed together (no explanation of relationships)
-- Displays code (no semantic understanding)
-
-**The learning value disappears.** Users still need to manually read commits, infer patterns, and build mental models—exactly the problem we're solving.
-
-### Prompt Strategy
-
-**Design Principle: Structured Prompts with Evidence Grounding**
-
-All prompts follow this pattern:
-1. **Role definition:** "You are helping a junior developer..."
-2. **Context:** File content, commit history, metadata
-3. **Task:** Specific, measurable output (2-3 sentences, JSON format)
-4. **Constraints:** Simple language, cite sources, admit uncertainty
-5. **Output format:** JSON schema for easy parsing
-
-**Prompt 1: File Summary**
-
-```
-You are helping a junior developer in India understand a codebase.
-They are new to this project and need clear, simple explanations.
-
-File: {file_path}
-Language: {language}
-Size: {line_count} lines
-
-Content:
-{file_content}
-
-Task: Summarize what this file does in 2-3 sentences.
-- Use simple language (avoid jargon where possible)
-- Focus on the main purpose and responsibilities
-- Mention key classes/functions if relevant
-
-Output JSON only:
-{
-  "summary": "..."
-}
-```
-
-**Why this works:**
-- Specifies audience (junior developer) → adjusts complexity
-- Requests conciseness (2-3 sentences) → avoids verbosity
-- Provides full context (file content) → grounds response in reality
-
-**Prompt 2: Design Decisions**
-
-```
-You are analyzing Git history to help a new developer understand design decisions.
-
-File: {file_path}
-
-Recent commits (last {commit_count}):
-{commit_list}
-
-Each commit includes:
-- Hash, author, date
-- Commit message
-- Diff (lines added/removed)
-
-Task: Extract 2-3 key design decisions from these commits.
-Focus on:
-- Architectural changes (e.g., "migrated from REST to GraphQL")
-- Refactorings (e.g., "switched to async/await")
-- Performance improvements
-- Bug fixes with reasoning (not just "fixed bug")
-
-For each decision:
-1. Describe the decision in 1-2 sentences
-2. Cite the commit hash(es) as evidence
-3. Explain why this decision matters (performance, maintainability, security, etc.)
-
-Important:
-- If commit messages are too brief or unclear, say "Limited commit context available"
-- If fewer than 5 commits, say "Insufficient commit history for design analysis"
-- Never invent information not present in commits
-
-Output JSON only:
-{
-  "design_decisions": [
-    {
-      "decision": "...",
-      "commits": ["abc123", "def456"],
-      "reasoning": "...",
-      "category": "performance" | "architecture" | "refactoring" | "bugfix"
-    }
-  ],
-  "confidence": "high" | "medium" | "low",
-  "notes": "Optional: explain why confidence is low"
-}
-```
-
-**Why this works:**
-- Provides structured commit data → LLM doesn't need to parse Git output
-- Requests citations → prevents hallucination
-- Explicitly handles uncertainty → builds trust
-- Categorizes decisions → helps users understand types of changes
-
-**Prompt 3: "Why is this weird?" (Code Explanation)**
-
-```
-A junior developer is confused by this code snippet and wants to understand why it's written this way.
-
-File: {file_path}
-Lines {line_start}-{line_end}:
-{code_snippet}
-
-Commits that touched these lines:
-{commit_list}
-
-Task: Explain in 2-3 sentences why this code exists or why it's written this way.
-- Look for clues in commit messages (e.g., "workaround for X", "handles edge case Y")
-- If the code seems unusual, explain the likely reason (performance, compatibility, bug fix)
-- If you don't know, say "No clear explanation in commit history"
-
-Output JSON only:
-{
-  "explanation": "...",
-  "commits": ["xyz789"],
-  "confidence": "high" | "medium" | "low"
-}
-```
-
-**Why this works:**
-- Focuses on specific lines → reduces context size
-- Looks for historical reasoning → grounds explanation in reality
-- Admits ignorance when appropriate → avoids hallucination
-
-### Responsible AI Behaviors
-
-**RAI-1: Citation & Source Grounding**
-
-Every AI-generated claim must be traceable to source data:
-- Design decisions cite commit hashes
-- Code explanations reference specific commits
-- Related file explanations show import statements or co-change data
-
-**Implementation:**
-```python
-# Pseudocode
-def validate_citations(response: dict, commits: list):
-    """Ensure all cited commits actually exist"""
-    cited_hashes = [c for d in response["design_decisions"] for c in d["commits"]]
-    valid_hashes = [c["hash"] for c in commits]
-    
-    for hash in cited_hashes:
-        if hash not in valid_hashes:
-            # Log warning, remove invalid citation
-            logger.warning(f"LLM cited non-existent commit: {hash}")
-```
-
-**RAI-2: Labeling AI Output**
-
-All AI-generated content is clearly marked:
-- Sidebar shows "✨ AI-generated" badge
-- Footer includes disclaimer: "AI-generated insights may be incomplete. Always verify with source code."
-- Confidence scores shown when available (high/medium/low)
-
-**RAI-3: Handling Uncertainty**
-
-The system explicitly handles cases where evidence is weak:
-
-| Scenario | Response |
-|----------|----------|
-| < 5 commits | "Limited commit history available for this file" |
-| Brief commit messages | "Commit messages are brief; design decisions may be incomplete" |
-| No commits touching selected lines | "No commit history found for this code region" |
-| LLM confidence = low | Show warning: "Analysis confidence is low due to limited context" |
-
-**Implementation:**
-```python
-# Pseudocode
-def handle_sparse_history(commits: list):
-    if len(commits) < 5:
-        return {
-            "summary": generate_summary_from_code_only(),
-            "design_decisions": [],
-            "notes": "Limited commit history available for this file"
-        }
-    
-    if avg_commit_message_length(commits) < 20:
-        # Warn user that analysis may be incomplete
-        return {
-            "design_decisions": extract_decisions(commits),
-            "confidence": "low",
-            "notes": "Commit messages are brief; design decisions may be incomplete"
-        }
-```
-
-**RAI-4: Privacy & Data Handling**
-
-- Repository code is sent to LLM API only for analysis (not training)
-- No long-term storage of code or analysis (5-minute cache only)
-- Users provide their own API keys (no shared keys)
-- Optional: use AWS Bedrock for data residency in India
-
-**Warning in UI:**
-```
-⚠️ Privacy Notice:
-Code is sent to [OpenAI/AWS Bedrock] for analysis.
-Do not use with proprietary code unless your organization approves.
-```
-
-**RAI-5: Bias & Fairness**
-
-- Use simple, clear language accessible to non-native English speakers
-- Avoid cultural assumptions (e.g., don't assume familiarity with Western tech companies)
-- Test with codebases from Indian companies and colleges
-- Avoid jargon specific to Silicon Valley or US tech culture
-
-**Example:**
-- ❌ "This is a typical FAANG-style microservice"
-- ✅ "This is a microservice that handles user authentication"
-
-
-## Alignment with AI for Bharat: Learning & Developer Productivity
-
-### Target User Context
-
-**Who We're Helping:**
-- **New graduates** from Tier-2/Tier-3 colleges joining large BFSI or service companies
-- **Junior developers** (0-2 years experience) working on legacy codebases with poor documentation
-- **Students** inheriting college projects or contributing to open source
-- **Self-taught developers** learning professional development practices
-
-**Their Challenges:**
-- Large codebases (1000+ files) with minimal documentation
-- Senior developers too busy to answer "why" questions
-- Pressure to deliver quickly without understanding context
-- Limited exposure to design patterns and architectural reasoning
-- English may not be first language (need simple, clear explanations)
-
-### How ContextWeave Helps
-
-**1. Accelerates Learning (5-10x faster)**
-
-Traditional approach:
-- Read 500 lines of code → 30 minutes
-- Search Git history manually → 20 minutes
-- Ask senior developer → 10 minutes (if available)
-- **Total: ~60 minutes per file**
-
-With ContextWeave:
-- Right-click file → see summary, decisions, related files
-- **Total: ~5 minutes per file**
-
-**Impact:** New developers can explore 10-12 files per hour instead of 1-2.
-
-**2. Reduces Senior Developer Burden**
-
-Common interruptions:
-- "What does this file do?"
-- "Why was this refactored?"
-- "Which files should I read next?"
-
-ContextWeave answers these questions automatically, freeing senior developers to focus on architecture and mentoring.
-
-**Impact:** Reduce interruptions by 50%, improve team productivity.
-
-**3. Builds Mental Models Faster**
-
-Understanding code requires:
-- **What:** What does this code do? (syntax, structure)
-- **Why:** Why was it built this way? (design decisions, tradeoffs)
-- **How:** How does it fit into the system? (related files, dependencies)
-
-ContextWeave provides all three in one view, helping developers build accurate mental models quickly.
-
-**Impact:** Developers make fewer mistakes, write more consistent code.
-
-**4. Supports Upskilling**
-
-By explaining design decisions and reasoning, ContextWeave teaches:
-- Design patterns (repository, factory, observer)
-- Architectural tradeoffs (sync vs async, REST vs GraphQL)
-- Best practices (error handling, performance optimization)
-
-**Impact:** Junior developers learn professional practices faster, become more valuable to their teams.
-
-**5. Democratizes Access to Knowledge**
-
-In many Indian companies:
-- Knowledge is concentrated in 1-2 senior developers
-- Documentation is sparse or outdated
-- Onboarding is informal and inconsistent
-
-ContextWeave makes codebase knowledge accessible to everyone, regardless of seniority or access to mentors.
-
-**Impact:** More equitable learning opportunities, especially for developers in smaller cities or companies.
-
-### Why This Matters for India
-
-**Scale of Opportunity:**
-- India has 5+ million software developers
-- 300,000+ new CS graduates per year
-- Many join service companies with large, legacy codebases
-- Onboarding is a major bottleneck for productivity
-
-**Economic Impact:**
-- Faster onboarding → developers productive 2-3 weeks sooner
-- Reduced senior dev burden → more time for innovation
-- Better code quality → fewer bugs, lower maintenance costs
-
-**Social Impact:**
-- Empowers developers from Tier-2/3 colleges (often underestimated)
-- Reduces dependency on expensive bootcamps or mentors
-- Supports self-taught developers and career switchers
-
-### Alignment with AI for Bharat Theme
-
-**Learning:**
-- ContextWeave is fundamentally a learning tool, not just a productivity tool
-- Teaches "why" and "how", not just "what"
-- Adapts explanations for junior developers and students
-
-**Developer Productivity:**
-- Reduces time spent understanding code by 10x
-- Eliminates repetitive questions to senior developers
-- Enables faster, more confident decision-making
-
-**Meaningful AI Use:**
-- AI interprets natural language (commit messages)
-- AI reasons about design decisions (synthesis across commits)
-- AI explains code semantically (not just syntax)
-- Without AI, the product loses its core value
-
-**Responsible Design:**
-- Shows sources (commit hashes)
-- Labels AI output clearly
-- Handles uncertainty gracefully
-- Respects privacy (no long-term storage)
-
-
-## Trade-offs & Limitations
-
-### Scope Limitations (By Design)
-
-**Single-Repo Focus**
-- **Limitation:** Only analyzes one Git repository at a time
-- **Rationale:** Simplifies MVP, avoids complexity of cross-repo dependencies
-- **Impact:** Users working on microservices or monorepos need to analyze each repo separately
-- **Future:** Could support multi-repo context in v2
-
-**File-Level Analysis**
-- **Limitation:** Analyzes individual files, not system-wide architecture
-- **Rationale:** Keeps scope manageable, aligns with "understand this file" use case
-- **Impact:** Doesn't show how multiple files interact to implement a feature
-- **Future:** Could add "feature flow" analysis (trace request through multiple files)
-
-**Simple Related Files Heuristic**
-- **Limitation:** Uses imports + co-change frequency, not deep semantic analysis
-- **Rationale:** Deterministic heuristics are fast and predictable; AI adds explanations
-- **Impact:** May miss conceptual relationships (e.g., two files that solve similar problems but don't import each other)
-- **Future:** Could use embeddings to find semantically similar files
-
-**No Real-Time Collaboration**
-- **Limitation:** Single-user tool, no team features (shared annotations, discussions)
-- **Rationale:** MVP focuses on individual learning, not team workflows
-- **Impact:** Teams can't collaboratively build knowledge base
-- **Future:** Could add team features (shared insights, annotations)
-
-### Technical Trade-offs
-
-**Latency vs Cost**
-
-| Approach | Latency | Cost | Quality |
-|----------|---------|------|---------|
-| No caching | 8-10s | High | High |
-| 5-min cache | 0-10s | Medium | High |
-| 1-hour cache | 0-10s | Low | Medium (stale) |
-
-**Decision:** 5-minute cache balances freshness and cost.
-
-**Commit Limit (50 commits)**
-- **Trade-off:** More commits = better context but higher latency and cost
-- **Decision:** 50 commits covers ~6 months of active development for most files
-- **Impact:** Very old design decisions (> 6 months) may be missed
-- **Mitigation:** Users can increase limit in settings (up to 100)
-
-**LLM Model Selection**
-
-| Model | Cost | Latency | Quality |
-|-------|------|---------|---------|
-| GPT-4 | High | 3-5s | Excellent |
-| GPT-3.5-turbo | Low | 1-2s | Good |
-| Claude 3 | Medium | 2-4s | Excellent |
-
-**Decision:** Default to GPT-3.5-turbo for cost, allow GPT-4 for complex files.
-
-**Token Limits**
-- **Limitation:** LLMs have token limits (8k-32k tokens)
-- **Impact:** Very large files (> 10,000 lines) must be truncated
-- **Mitigation:** Truncate to first 8,000 tokens, add note: "File truncated for analysis"
-
-### Known Limitations
-
-**Commit Message Quality**
-- **Problem:** If commit messages are uninformative ("fix", "update"), AI can't extract meaningful decisions
-- **Mitigation:** System detects sparse messages, shows "Limited commit context available"
-- **Impact:** Users still get file summary (from code), just not historical context
-
-**Language Support**
-- **Problem:** AI works best with popular languages (Python, JavaScript, Java)
-- **Impact:** Less common languages (Rust, Elixir) may get lower-quality summaries
-- **Mitigation:** Focus MVP on top 5 languages, expand later
-
-**Binary Files**
-- **Problem:** Can't analyze images, PDFs, compiled binaries
-- **Mitigation:** Detect binary files, show "Not supported" message
-
-**New Files (No History)**
-- **Problem:** Files with < 5 commits have limited historical context
-- **Mitigation:** Still provide summary from code, skip design decisions section
-
-**Hallucination Risk**
-- **Problem:** LLMs may invent plausible-sounding but incorrect information
-- **Mitigation:** 
-  - Ground all claims in actual commits (require citations)
-  - Show confidence scores
-  - Encourage users to verify with source code
-
-### Performance Considerations
-
-**Backend Scalability**
-- **Current:** Single FastAPI instance, in-memory cache
-- **Limitation:** Can handle ~10 concurrent users
-- **Future:** Add Redis cache, horizontal scaling for production
-
-**VS Code Extension Performance**
-- **Current:** Synchronous API calls block UI briefly
-- **Limitation:** Large files (> 5000 lines) may cause 10+ second delays
-- **Future:** Add streaming responses, show incremental results
-
-**LLM API Rate Limits**
-- **Problem:** OpenAI free tier: 3 requests/min, paid tier: 60 requests/min
-- **Impact:** Multiple users or rapid file switching may hit limits
-- **Mitigation:** Cache aggressively, show rate limit errors clearly
+**Key Functions:**
+
+1. **analyzeFile(repoPath, filePath, selectedCode)**
+   - Reads configuration (backendUrl, commitLimit)
+   - Constructs request body
+   - Makes POST request to `/context/file`
+   - Returns AnalysisResult
+   - Throws errors for caller to handle
+
+**Configuration:**
+- `contextweave.backendUrl` - Backend URL
+- `contextweave.commitLimit` - Max commits (default: 50)
+
+---
+
+### Sidebar Provider (sidebarProvider.ts)
+
+**Responsibilities:**
+- Webview lifecycle management
+- HTML generation for different states
+- User interaction handling (click file links)
+- Styling with VS Code theme colors
+
+**Key Methods:**
+
+1. **resolveWebviewView(webviewView, context, token)**
+   - Initializes webview with options
+   - Sets initial HTML
+   - Registers message handlers
+
+2. **showLoading(filePath)**
+   - Displays spinner and "Analyzing..." message
+   - Shows file name being analyzed
+
+3. **showResult(result)**
+   - Generates HTML from AnalysisResult
+   - Renders sections: summary, decisions, related files, weird code
+   - Shows mock warning if applicable
+   - Makes commit hashes and file paths clickable
+
+4. **showError(errorMessage)**
+   - Displays error with suggestions
+   - Styled with VS Code error colors
+
+**HTML Generation:**
+- Uses VS Code CSS variables for theming
+- Responsive layout
+- Clear visual hierarchy
+- Accessible markup
+
+**Interactivity:**
+- File links send `openFile` message to extension
+- Extension opens file in editor
+- Commit badges could link to Git view (future)
+
+**Styling:**
+- Uses VS Code theme colors (foreground, background, borders)
+- Consistent spacing and typography
+- Icons for visual clarity (📄, 🔍, 📚, 🤔)
+- Responsive to theme changes
+
+---
+
+## AI Design Rationale
+
+### Why AI is Essential
+
+**Problem:** Developers need to understand code quickly, but:
+- Commit messages are unstructured natural language
+- Design decisions span multiple commits
+- Code semantics require deep understanding
+- Explanations must be adapted for audience
+
+**Why Rules Fail:**
+- Cannot interpret natural language
+- Cannot reason across multiple data points
+- Cannot generate human-readable explanations
+- Cannot adapt to novel code patterns
+
+**Why AI Succeeds:**
+- Natural language understanding (commit messages)
+- Semantic code understanding (what code does)
+- Reasoning and synthesis (patterns across commits)
+- Natural language generation (clear explanations)
+- Audience adaptation (junior developer tone)
+
+### Deterministic vs AI Layers
+
+**Deterministic Layer (Git Analysis):**
+- Fast and reliable
+- No API costs
+- Testable and predictable
+- Provides structured data for AI
+
+**AI Layer (LLM Integration):**
+- Interprets unstructured data
+- Reasons about intent and tradeoffs
+- Generates human-readable text
+- Handles novel situations
+
+**Design Principle:** Use rules where possible, AI where necessary.
 
+### Responsible AI Practices
+
+**Transparency:**
+- All AI output labeled "AI-generated"
+- Model name shown in metadata
+- Mock mode clearly indicated
+
+**Source Attribution:**
+- Commit hashes cited for all decisions
+- Clickable links to evidence
+- Metadata shows how many commits analyzed
+
+**Uncertainty Handling:**
+- Prompt instructs: "Admit when evidence is weak"
+- System shows warnings when commit history is sparse
+- Never invents information not in data
+
+**Privacy:**
+- Code sent to LLM only for analysis (not training)
+- User provides their own API key
+- No long-term storage of code
+- Warning about sending proprietary code to cloud
+
+**No Hallucination:**
+- Prompt emphasizes: "Base answer only on provided commits"
+- Response validation checks for invented commit hashes
+- Fallback to mock mode if LLM response is invalid
+
+---
+
+## Alignment with AI for Bharat
+
+### Target Users: Indian Developers
+
+**Students (Tier-2/Tier-3 colleges):**
+- Learning from real-world GitHub projects
+- Limited access to mentors
+- Need to understand code quickly to contribute
+
+**New Graduates:**
+- Joining companies with large legacy codebases
+- Minimal documentation
+- Senior developers are overloaded
+
+**Junior Developers:**
+- Maintaining inherited code
+- Original authors have left
+- Afraid to break things
+
+### Value Proposition
+
+**5-10x Faster Learning:**
+- Manual analysis: 30 minutes per file
+- With ContextWeave: 3 minutes per file
+- Reduces onboarding time from 6 weeks to 3 weeks
+
+**Democratized Knowledge:**
+- No need to wait for senior developer
+- Self-service understanding
+- Builds confidence to contribute
+
+**Reduced Dependency:**
+- Less "why" questions to seniors
+- Empowers junior developers
+- Frees up senior time for high-value work
+
+### India-Specific Challenges Addressed
+
+**Documentation Gap:**
+- Legacy codebases have no docs
+- ContextWeave generates docs from Git history
+
+**Knowledge Concentration:**
+- 1-2 seniors hold all context
+- ContextWeave extracts knowledge from commits
+
+**Noisy Git History:**
+- Commit messages like "fix", "update"
+- AI interprets and synthesizes patterns
+
+**Slow Onboarding:**
+- New hires take 4-6 weeks to be productive
+- ContextWeave accelerates learning curve
+
+---
+
+## Trade-offs and Design Decisions
+
+### Trade-off 1: External LLM vs Self-Hosted
+
+**Decision:** Use external LLM API (Groq/OpenAI)
+
+**Rationale:**
+- Faster development (no model training/hosting)
+- Better quality (state-of-the-art models)
+- Lower cost for MVP (free tiers available)
+- Easier to swap models (just change API key)
+
+**Downside:**
+- Requires internet connection
+- Privacy concerns (code sent to cloud)
+- API costs at scale
+
+**Mitigation:**
+- Provide mock mode for offline use
+- Warn users about sending proprietary code
+- Support multiple providers (Groq, OpenAI, Bedrock)
+
+---
+
+### Trade-off 2: File-Level vs Repository-Level Analysis
+
+**Decision:** File-level analysis only (MVP)
+
+**Rationale:**
+- Simpler to implement
+- Faster response time
+- Easier to understand results
+- Fits VS Code workflow (one file at a time)
+
+**Downside:**
+- Misses cross-file architectural patterns
+- Cannot explain system-level design decisions
+
+**Future Extension:**
+- Add "Explain this module" command
+- Add "Explain this feature" command
+- Add architectural diagram generation
+
+---
+
+### Trade-off 3: Real-Time vs Cached Analysis
+
+**Decision:** Real-time analysis (no caching for MVP)
+
+**Rationale:**
+- Simpler implementation
+- Always up-to-date results
+- No cache invalidation complexity
+
+**Downside:**
+- Slower for repeated queries
+- Higher API costs
+
+**Future Extension:**
+- Cache results for 5 minutes
+- Invalidate on file changes
+- Show "cached" indicator in UI
+
+---
+
+### Trade-off 4: Structured Prompt vs Fine-Tuned Model
+
+**Decision:** Structured prompt with general-purpose model
+
+**Rationale:**
+- No training data required
+- Works with any OpenAI-compatible model
+- Easy to iterate on prompt
+- Lower cost and complexity
+
+**Downside:**
+- Less consistent than fine-tuned model
+- Longer prompts (more tokens)
+
+**Future Extension:**
+- Fine-tune on high-quality examples
+- Reduce prompt length
+- Improve consistency
+
+---
 
 ## Future Extensions
 
-### Near-Term Enhancements (v1.1 - v1.3)
+### Phase 2: Enhanced Analysis
+- Multi-file analysis (module-level, feature-level)
+- Architectural diagram generation
+- Code quality insights (complexity, duplication)
+- Test coverage analysis
 
-**1. Multi-Language UI**
-- Add Hindi, Tamil, Telugu translations for UI
-- LLM can generate explanations in regional languages
-- **Impact:** Accessible to non-English-speaking developers in India
+### Phase 3: Collaboration
+- Shared annotations and notes
+- Team knowledge base
+- Onboarding checklists
+- Learning paths
 
-**2. Improved Related Files**
-- Use code embeddings (e.g., OpenAI embeddings) to find semantically similar files
-- Analyze call graphs (which functions call which)
-- **Impact:** Better recommendations, especially for large codebases
+### Phase 4: Enterprise Features
+- Self-hosted LLM option
+- Fine-tuned models for specific codebases
+- Integration with Jira/Linear
+- Analytics and insights
 
-**3. "Explain This Function"**
-- Right-click a function → get focused explanation
-- Show callers and callees
-- **Impact:** More granular analysis for debugging
-
-**4. Commit Timeline View**
-- Visualize how file evolved over time (timeline of major changes)
-- Show which developers contributed most
-- **Impact:** Better understanding of file history
-
-**5. Offline Mode**
-- Cache LLM responses for 24 hours
-- Allow analysis without internet (using cached data)
-- **Impact:** Works in low-connectivity environments
-
-### Medium-Term Enhancements (v2.0)
-
-**6. Multi-Repo Context**
-- Analyze dependencies across multiple repositories
-- Show how microservices interact
-- **Impact:** Essential for microservices architectures
-
-**7. Chat Interface**
-- Ask follow-up questions: "Why was async chosen over sync?"
-- Conversational exploration of codebase
-- **Impact:** More natural learning experience
-
-**8. Team Features**
-- Share insights with team (annotations, comments)
-- Collaborative knowledge base
-- **Impact:** Builds institutional knowledge
-
-**9. Integration with Issue Trackers**
-- Link design decisions to Jira tickets or GitHub issues
-- Show "this change fixed bug #123"
-- **Impact:** Better traceability
-
-**10. Custom Prompts**
-- Allow users to define custom analysis prompts
-- Example: "Identify security vulnerabilities" or "Find performance bottlenecks"
-- **Impact:** Flexible tool for different use cases
-
-### Long-Term Vision (v3.0+)
-
-**11. Proactive Insights**
-- Automatically analyze files when opened (background)
-- Suggest related files as you code
-- **Impact:** Zero-friction learning
-
-**12. Code Review Assistant**
-- Analyze PRs, explain changes in plain language
-- Suggest reviewers based on file history
-- **Impact:** Faster, more thorough code reviews
-
-**13. Onboarding Workflows**
-- Generate personalized learning paths for new hires
-- "Read these 10 files to understand the payment system"
-- **Impact:** Structured onboarding experience
-
-**14. Architecture Visualization**
-- Generate diagrams showing how files/modules interact
-- Visual representation of system architecture
-- **Impact:** Better mental models for visual learners
-
-**15. Fine-Tuned Models**
-- Train custom models on company-specific codebases
-- Better understanding of domain-specific patterns
-- **Impact:** Higher quality insights for specialized domains
-
-### Deployment & Infrastructure
-
-**Current (MVP):**
-- Backend: Local (`uvicorn main:app`)
-- LLM: OpenAI API (user-provided key)
-- Cache: In-memory (Python dict)
-
-**Near-Term:**
-- Backend: AWS EC2 (t3.small) or Lightsail
-- LLM: AWS Bedrock (Claude or Titan) for data residency
-- Cache: Redis (ElastiCache)
-
-**Long-Term:**
-- Backend: Kubernetes cluster (auto-scaling)
-- LLM: Mix of cloud APIs and self-hosted models
-- Cache: Distributed cache (Redis Cluster)
-- Storage: PostgreSQL for persistent insights
-
-### Success Metrics
-
-**MVP (v1.0):**
-- 50+ active users (developers, students)
-- 80% of summaries rated "helpful" or "very helpful"
-- 50% reduction in "why" questions to senior developers
-- 5-10x faster file comprehension (measured by user surveys)
-
-**v2.0:**
-- 500+ active users
-- 10+ companies using for onboarding
-- Integration with 3+ popular IDEs (VS Code, IntelliJ, Vim)
-
-**v3.0:**
-- 5,000+ active users
-- Enterprise customers (BFSI, service companies)
-- Measurable impact on onboarding time (2-3 weeks faster)
+### Phase 5: India-Specific Features
+- Multi-language UI (Hindi, Tamil, Telugu)
+- Integration with Indian code schools (Masai, Scaler)
+- Optimized for Indian internet speeds
+- Support for Indian cloud providers
 
 ---
 
-## Appendix: Technology Stack Summary
+## Deployment Architecture (Future)
 
-### Backend
-- **Language:** Python 3.11+
-- **Framework:** FastAPI (async web framework)
-- **Git Integration:** GitPython (Git operations)
-- **LLM Client:** OpenAI Python SDK or AWS Boto3 (Bedrock)
-- **Validation:** Pydantic (data models)
-- **Caching:** In-memory dict (MVP), Redis (production)
-- **Deployment:** Uvicorn (ASGI server), Docker (containerization)
+### Local Development (Current)
+```
+Developer Machine
+├── VS Code Extension
+├── Backend (localhost:8000)
+└── External LLM API (Groq/OpenAI)
+```
 
-### Frontend (VS Code Extension)
-- **Language:** TypeScript
-- **Framework:** VS Code Extension API
-- **UI:** Webview API (HTML/CSS/JS)
-- **HTTP Client:** Fetch API or Axios
-- **Build:** Webpack or esbuild
-- **Package:** vsce (VS Code extension packager)
+### Team Deployment (Future)
+```
+Developer Machines (VS Code Extension)
+         ↓
+    Load Balancer
+         ↓
+Backend Cluster (AWS EC2/ECS)
+         ↓
+AWS Bedrock (LLM) or OpenAI API
+```
 
-### Infrastructure (Optional)
-- **Compute:** AWS EC2 (t3.small) or Lightsail
-- **LLM:** AWS Bedrock (Claude 3 or Titan)
-- **Cache:** AWS ElastiCache (Redis)
-- **Monitoring:** CloudWatch (logs, metrics)
-
-### Development Tools
-- **AI Assistants:** Kiro (requirements, design), GitHub Copilot (code generation)
-- **Version Control:** Git + GitHub
-- **Testing:** pytest (backend), Jest (extension)
-- **Linting:** mypy (Python), ESLint (TypeScript)
+### Enterprise Deployment (Future)
+```
+Developer Machines (VS Code Extension)
+         ↓
+    API Gateway
+         ↓
+Backend Cluster (Kubernetes)
+         ↓
+Self-Hosted LLM (AWS SageMaker)
+         ↓
+Vector DB (Pinecone) for caching
+```
 
 ---
 
-## Document Metadata
+## Testing Strategy
 
-**Generated by:** Kiro AI Assistant  
-**Date:** February 7, 2026  
-**Version:** 1.0 (MVP Design)  
-**Theme:** AI for Bharat – Learning & Developer Productivity  
-**Target Users:** Indian developers (students, freshers, junior engineers)
+### Unit Tests
+- Git analysis functions (mock Git repos)
+- Import parsing (sample code files)
+- Prompt construction (verify format)
+- Response parsing (mock LLM responses)
 
-**Related Documents:**
-- `requirements.md` - Product requirements and user stories
-- `README.md` - Setup and usage instructions (to be created)
-- `ARCHITECTURE.md` - Detailed technical architecture (to be created)
+### Integration Tests
+- Backend API endpoints (mock LLM)
+- VS Code extension commands (mock backend)
+- End-to-end flow (real Git repo, mock LLM)
 
-**Review Status:** Draft (pending technical review)
+### Manual Testing
+- Real repositories (open-source projects)
+- Edge cases (empty files, no commits, binary files)
+- Error scenarios (backend down, invalid API key)
+- UI/UX (readability, clickability, responsiveness)
 
+### User Testing
+- 5+ developers from target segment
+- Task: Understand a file in an unfamiliar codebase
+- Metrics: Time to understanding, accuracy, satisfaction
+- Feedback: What worked, what didn't, what's missing
+
+---
+
+## Success Metrics
+
+### Technical Metrics
+- Latency: < 15 seconds per analysis
+- Accuracy: 80%+ helpful summaries (manual review)
+- Reliability: 99%+ uptime during demo
+- Error rate: < 5% of requests fail
+
+### User Metrics
+- Speed: 5-10x faster than manual analysis
+- Adoption: 5+ developers report value
+- Learning: Users understand files they couldn't before
+- Satisfaction: 4+ stars out of 5
+
+### Hackathon Metrics
+- Demo quality: Works reliably during presentation
+- Judge understanding: Clear why AI is essential
+- India impact: Clear value for target users
+- Documentation: Comprehensive and well-organized
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** February 7, 2026  
+**Status:** Complete

@@ -194,6 +194,11 @@ async def call_llm(prompt: str) -> dict:
         
     Returns:
         Parsed JSON response from LLM
+        
+    Raises:
+        httpx.HTTPStatusError: If API returns error status
+        httpx.TimeoutException: If request times out
+        json.JSONDecodeError: If response is not valid JSON
     """
     headers = {
         "Authorization": f"Bearer {LLM_API_KEY}",
@@ -216,31 +221,61 @@ async def call_llm(prompt: str) -> dict:
         "max_tokens": 1500
     }
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            f"{LLM_API_BASE}/chat/completions",
-            headers=headers,
-            json=payload
-        )
-        
-        response.raise_for_status()
-        result = response.json()
-        
-        # Extract content from response
-        content = result["choices"][0]["message"]["content"]
-        
-        # Parse JSON from content
-        # Remove markdown code blocks if present
-        content = content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-        
-        return json.loads(content)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            logger.info(f"Calling LLM API: {LLM_API_BASE} with model {LLM_MODEL}")
+            response = await client.post(
+                f"{LLM_API_BASE}/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            
+            # Log response status
+            if response.status_code != 200:
+                logger.error(f"LLM API error {response.status_code}: {response.text}")
+                
+                # Provide specific error messages
+                if response.status_code == 401:
+                    raise Exception("Invalid LLM API key. Check LLM_API_KEY in .env file.")
+                elif response.status_code == 429:
+                    raise Exception("LLM API rate limit exceeded. Try again later.")
+                elif response.status_code >= 500:
+                    raise Exception(f"LLM service error ({response.status_code}). Try again later.")
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            # Extract content from response
+            if "choices" not in result or len(result["choices"]) == 0:
+                raise Exception("Invalid LLM response format: no choices returned")
+            
+            content = result["choices"][0]["message"]["content"]
+            logger.info(f"LLM response received ({len(content)} chars)")
+            
+            # Parse JSON from content
+            # Remove markdown code blocks if present
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            parsed = json.loads(content)
+            logger.info("LLM response parsed successfully")
+            return parsed
+            
+    except httpx.TimeoutException:
+        logger.error("LLM API request timed out after 30 seconds")
+        raise Exception("LLM API request timed out. Check your internet connection.")
+    except httpx.ConnectError:
+        logger.error(f"Could not connect to LLM API at {LLM_API_BASE}")
+        raise Exception(f"Could not connect to LLM API. Check LLM_API_BASE in .env file.")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse LLM response as JSON: {e}")
+        raise Exception("LLM returned invalid JSON. Try again or check model configuration.")
 
 
 def parse_llm_response(llm_response: dict, commits: List[Dict], related_files_data: Dict) -> ContextResponse:

@@ -45,9 +45,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    public showError(errorMessage: string) {
+    public showError(errorMessage: string, suggestions?: string[]) {
         if (this._view) {
-            this._view.webview.html = this._getErrorHtml(errorMessage);
+            this._view.webview.html = this._getErrorHtml(errorMessage, suggestions);
         }
     }
 
@@ -111,7 +111,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 </html>`;
     }
 
-    private _getErrorHtml(errorMessage: string): string {
+    private _getErrorHtml(errorMessage: string, suggestions?: string[]): string {
+        const suggestionsHtml = suggestions && suggestions.length > 0
+            ? `
+                <div class="suggestions">
+                    <h4>💡 Suggestions:</h4>
+                    <ul>
+                        ${suggestions.map(s => `<li>${this._escapeHtml(s)}</li>`).join('')}
+                    </ul>
+                </div>
+            `
+            : `<p class="hint">Make sure the backend server is running and the file is in a Git repository.</p>`;
+
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -124,8 +135,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="container">
         <div class="error">
             <h3>❌ Error</h3>
-            <p>${errorMessage}</p>
-            <p class="hint">Make sure the backend server is running and the file is in a Git repository.</p>
+            <p>${this._escapeHtml(errorMessage)}</p>
+            ${suggestionsHtml}
         </div>
     </div>
 </body>
@@ -311,6 +322,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 background-color: var(--vscode-inputValidation-errorBackground);
                 border: 1px solid var(--vscode-inputValidation-errorBorder);
                 border-radius: 4px;
+            }
+
+            .suggestions {
+                margin-top: 16px;
+                padding: 12px;
+                background-color: var(--vscode-editor-background);
+                border-radius: 4px;
+            }
+
+            .suggestions h4 {
+                margin: 0 0 8px 0;
+                font-size: 13px;
+                color: var(--vscode-textLink-foreground);
+            }
+
+            .suggestions ul {
+                margin: 0;
+                padding-left: 20px;
+            }
+
+            .suggestions li {
+                margin: 4px 0;
+                font-size: 12px;
+                line-height: 1.5;
             }
 
             .warning-box {

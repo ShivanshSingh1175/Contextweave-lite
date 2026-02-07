@@ -23,15 +23,20 @@ def get_commit_history(repo_path: str, file_path: str, limit: int = 50) -> List[
         
     Returns:
         List of commit dictionaries with hash, author, date, message, lines_changed
+        
+    Raises:
+        ValueError: If repo_path is not a valid Git repository
     """
     try:
         repo = Repo(repo_path)
+        logger.info(f"Opened Git repository at {repo_path}")
     except InvalidGitRepositoryError:
         logger.error(f"Not a valid Git repository: {repo_path}")
         raise ValueError(f"Not a valid Git repository: {repo_path}")
     
     # Get relative path from repo root
     relative_path = os.path.relpath(file_path, repo_path)
+    logger.info(f"Querying commits for {relative_path} (limit: {limit})")
     
     try:
         # Get commits that touched this file
@@ -43,6 +48,8 @@ def get_commit_history(repo_path: str, file_path: str, limit: int = 50) -> List[
     if not commits:
         logger.info(f"No commits found for {relative_path}")
         return []
+    
+    logger.info(f"Found {len(commits)} commits for {relative_path}")
     
     result = []
     for commit in commits:
@@ -68,7 +75,7 @@ def get_commit_history(repo_path: str, file_path: str, limit: int = 50) -> List[
             "lines_changed": lines_changed
         })
     
-    logger.info(f"Found {len(result)} commits for {relative_path}")
+    logger.info(f"Successfully extracted {len(result)} commits with metadata")
     return result
 
 
