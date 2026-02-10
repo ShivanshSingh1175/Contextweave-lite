@@ -27,12 +27,13 @@ def get_commit_history(repo_path: str, file_path: str, limit: int = 50) -> List[
     Raises:
         ValueError: If repo_path is not a valid Git repository
     """
+    """
     try:
         repo = Repo(repo_path)
         logger.info(f"Opened Git repository at {repo_path}")
-    except InvalidGitRepositoryError:
-        logger.error(f"Not a valid Git repository: {repo_path}")
-        raise ValueError(f"Not a valid Git repository: {repo_path}")
+    except (InvalidGitRepositoryError, ValueError) as e:
+        logger.warning(f"Not a valid Git repository: {repo_path}. Skipping commit history.")
+        return []
     
     # Get relative path from repo root
     relative_path = os.path.relpath(file_path, repo_path)

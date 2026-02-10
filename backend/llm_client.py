@@ -1,25 +1,31 @@
 """
-LLM API client and prompt builder
+LLM API client and prompt builder using Instructor for structured output
 Handles communication with OpenAI-compatible LLM APIs
 """
 import os
-import json
 import logging
 from typing import List, Dict, Optional
-import httpx
+import instructor
+from openai import AsyncOpenAI
+import tiktoken
 
 from schemas import ContextResponse, DesignDecision, RelatedFile
 
 logger = logging.getLogger(__name__)
 
-# TODO: Set these environment variables before running:
-# export LLM_API_KEY="your-api-key-here"
-# export LLM_API_BASE="https://api.openai.com/v1"  # or compatible endpoint
-# export LLM_MODEL="gpt-3.5-turbo"  # or gpt-4, claude-3-sonnet, etc.
-
+# Environment variables
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_API_BASE = os.getenv("LLM_API_BASE", "https://api.openai.com/v1")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+
+# Initialize Instructor client
+if LLM_API_KEY:
+    aclient = instructor.patch(AsyncOpenAI(
+        api_key=LLM_API_KEY,
+        base_url=LLM_API_BASE
+    ))
+else:
+    aclient = None
 
 
 async def analyze_file_with_llm(
@@ -31,37 +37,45 @@ async def analyze_file_with_llm(
 ) -> ContextResponse:
     """
     Call LLM to analyze file and generate summary, design decisions, and related files
-    
-    Args:
-        file_path: Path to the file being analyzed
-        file_content: Content of the file
-        commits: List of commit dictionaries
-        related_files_data: Dict with 'imports' and 'co_changed' lists
-        selected_code: Optional selected code snippet to explain
-        
-    Returns:
-        ContextResponse with analysis results
+    Uses Instructor for structured JSON output.
     """
-    if not LLM_API_KEY:
+    if not aclient:
         logger.warning("LLM_API_KEY not set, returning mock response")
         return create_mock_response(file_path, commits, related_files_data, selected_code)
     
-    # Build the prompt
-    prompt = build_analysis_prompt(
+    # 1. Truncate content using tiktoken
+    truncated_content = truncate_content_tokens(file_content, LLM_MODEL)
+    
+    # 2. Build the system and user messages
+    messages = build_messages(
         file_path=file_path,
-        file_content=file_content,
+        file_content=truncated_content,
         commits=commits,
         related_files_data=related_files_data,
         selected_code=selected_code
     )
     
-    # Call LLM
+    # 3. Call LLM with structured output
     try:
-        llm_response = await call_llm(prompt)
+        logger.info(f"Calling LLM API: {LLM_API_BASE} with model {LLM_MODEL} (Instructor)")
         
-        # Parse LLM response into structured format
-        response = parse_llm_response(llm_response, commits, related_files_data)
+        response = await aclient.chat.completions.create(
+            model=LLM_MODEL,
+            response_model=ContextResponse,
+            messages=messages,
+            temperature=0.3,
+            max_retries=2,
+        )
         
+        # Add metadata manually since it's not part of LLM generation usually
+        response.metadata = {
+            "commits_analyzed": len(commits),
+            "llm_model": LLM_MODEL,
+            "has_commit_history": len(commits) > 0,
+            "tokens_used": "unknown" # Instructor abstracts this, could get from raw response if needed
+        }
+        
+        logger.info("LLM response received and parsed successfully")
         return response
         
     except Exception as e:
@@ -70,63 +84,72 @@ async def analyze_file_with_llm(
         return create_mock_response(file_path, commits, related_files_data, selected_code)
 
 
-def build_analysis_prompt(
+def truncate_content_tokens(content: str, model: str, max_tokens: int = 6000) -> str:
+    """
+    Truncate content to a specific number of tokens
+    """
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except KeyError:
+        encoding = tiktoken.get_encoding("cl100k_base")
+    
+    tokens = encoding.encode(content)
+    
+    if len(tokens) <= max_tokens:
+        return content
+    
+    logger.info(f"Truncating file content from {len(tokens)} to {max_tokens} tokens")
+    truncated_tokens = tokens[:max_tokens]
+    return encoding.decode(truncated_tokens) + "\n... [File truncated for analysis] ..."
+
+
+def build_messages(
     file_path: str,
     file_content: str,
     commits: List[Dict],
     related_files_data: Dict,
     selected_code: Optional[str] = None
-) -> str:
+) -> List[Dict]:
     """
-    Build a structured prompt for the LLM
-    
-    Returns:
-        Formatted prompt string
+    Build messages for the chat completion
     """
-    # Truncate file content if too long (keep first 6000 chars)
-    if len(file_content) > 6000:
-        file_content = file_content[:6000] + "\n\n... [File truncated for analysis] ..."
-    
-    # Format commits for prompt
-    commits_text = ""
+    # Format commits
+    commits_text = "No commit history available for this file."
     if commits:
         commits_text = "\n".join([
             f"- {c['hash']} ({c['date'][:10]}, {c['author']}): {c['message'][:100]}"
             f" [{c['lines_changed']} lines changed]"
-            for c in commits[:20]  # Use top 20 commits
+            for c in commits[:20]
         ])
-    else:
-        commits_text = "No commit history available for this file."
     
     # Format related files
     related_text = ""
     if related_files_data.get('imports'):
-        related_text += "Imported files:\n"
-        related_text += "\n".join([f"- {imp}" for imp in related_files_data['imports'][:5]])
+        related_text += "Imported files:\n" + "\n".join([f"- {imp}" for imp in related_files_data['imports'][:5]])
     if related_files_data.get('co_changed'):
-        related_text += "\n\nFrequently co-changed files:\n"
-        related_text += "\n".join([
+        related_text += "\n\nFrequently co-changed files:\n" + "\n".join([
             f"- {item['path']} (changed together {item['frequency']} times)"
             for item in related_files_data['co_changed'][:5]
         ])
     
-    # Determine weird_code_explanation value
-    weird_code_value = '"Explanation of selected code"' if selected_code else 'null'
-    
-    # Build selected code section
+    # Selected code section
     selected_code_section = ""
     if selected_code:
-        selected_code_section = f"""4. Explain why this selected code might be unusual or noteworthy:
-SELECTED CODE:
+        selected_code_section = f"""
+USER SELECTED CODE:
+The user has highlighted this specific code block for explanation:
 ```
 {selected_code}
 ```
+Please explain why this code might be unusual or noteworthy in the 'weird_code_explanation' field.
 """
-    
-    # Build the main prompt
-    prompt = f"""You are helping a junior developer understand a codebase.
-Analyze this file and provide clear, concise insights.
 
+    system_prompt = """You are a senior developer assistant helping a junior engineer. 
+Analyze the provided file, commit history, and context. 
+Provide clear, educational insights. 
+Output must be a valid JSON matching the schema."""
+
+    user_prompt = f"""
 FILE: {file_path}
 
 FILE CONTENT:
@@ -134,196 +157,21 @@ FILE CONTENT:
 {file_content}
 ```
 
-RECENT COMMITS (last 20):
+RECENT COMMITS:
 {commits_text}
 
 RELATED FILES:
 {related_text}
 
-TASKS:
-1. Summarize what this file does in 2-3 sentences (simple, clear language).
-
-2. Extract 2-3 key design decisions from the commit history.
-   For each decision:
-   - Provide a short title (3-5 words)
-   - Write a one-line description
-   - Reference relevant commit hashes (use the short 7-char hashes shown above)
-   
-   If commit messages are too brief or unclear, say "Limited commit context available" instead of guessing.
-
-3. Suggest 2-3 related files that a new developer should read next.
-   Use the imports and co-changed files listed above.
-   For each file, explain in one sentence why it's related.
-
 {selected_code_section}
 
-IMPORTANT:
-- Be concise and clear
-- Admit uncertainty when evidence is weak
-- Use simple language suitable for junior developers
-- Reference actual commit hashes when discussing decisions
+Please analyze this file and return the summary, design decisions, related files advice, and code explanation.
+"""
 
-OUTPUT FORMAT (JSON only, no markdown):
-{{
-  "summary": "2-3 sentence summary here",
-  "decisions": [
-    {{
-      "title": "Short title",
-      "description": "One-line explanation",
-      "commits": ["abc123", "def456"]
-    }}
-  ],
-  "related_files": [
-    {{
-      "path": "relative/path/to/file.py",
-      "reason": "One sentence explaining the relationship"
-    }}
-  ],
-  "weird_code_explanation": {weird_code_value}
-}}"""
-    
-    return prompt
-
-
-async def call_llm(prompt: str) -> dict:
-    """
-    Call OpenAI-compatible LLM API
-    
-    Args:
-        prompt: The prompt to send to the LLM
-        
-    Returns:
-        Parsed JSON response from LLM
-        
-    Raises:
-        httpx.HTTPStatusError: If API returns error status
-        httpx.TimeoutException: If request times out
-        json.JSONDecodeError: If response is not valid JSON
-    """
-    headers = {
-        "Authorization": f"Bearer {LLM_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "model": LLM_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a code analysis assistant. Always respond with valid JSON."
-            },
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        "temperature": 0.3,  # Low temperature for consistency
-        "max_tokens": 1500
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.info(f"Calling LLM API: {LLM_API_BASE} with model {LLM_MODEL}")
-            response = await client.post(
-                f"{LLM_API_BASE}/chat/completions",
-                headers=headers,
-                json=payload
-            )
-            
-            # Log response status
-            if response.status_code != 200:
-                logger.error(f"LLM API error {response.status_code}: {response.text}")
-                
-                # Provide specific error messages
-                if response.status_code == 401:
-                    raise Exception("Invalid LLM API key. Check LLM_API_KEY in .env file.")
-                elif response.status_code == 429:
-                    raise Exception("LLM API rate limit exceeded. Try again later.")
-                elif response.status_code >= 500:
-                    raise Exception(f"LLM service error ({response.status_code}). Try again later.")
-            
-            response.raise_for_status()
-            result = response.json()
-            
-            # Extract content from response
-            if "choices" not in result or len(result["choices"]) == 0:
-                raise Exception("Invalid LLM response format: no choices returned")
-            
-            content = result["choices"][0]["message"]["content"]
-            logger.info(f"LLM response received ({len(content)} chars)")
-            
-            # Parse JSON from content
-            # Remove markdown code blocks if present
-            content = content.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.startswith("```"):
-                content = content[3:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-            
-            parsed = json.loads(content)
-            logger.info("LLM response parsed successfully")
-            return parsed
-            
-    except httpx.TimeoutException:
-        logger.error("LLM API request timed out after 30 seconds")
-        raise Exception("LLM API request timed out. Check your internet connection.")
-    except httpx.ConnectError:
-        logger.error(f"Could not connect to LLM API at {LLM_API_BASE}")
-        raise Exception(f"Could not connect to LLM API. Check LLM_API_BASE in .env file.")
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse LLM response as JSON: {e}")
-        raise Exception("LLM returned invalid JSON. Try again or check model configuration.")
-
-
-def parse_llm_response(llm_response: dict, commits: List[Dict], related_files_data: Dict) -> ContextResponse:
-    """
-    Parse LLM JSON response into ContextResponse model
-    
-    Args:
-        llm_response: Raw JSON response from LLM
-        commits: Original commit data (for metadata)
-        related_files_data: Original related files data (for metadata)
-        
-    Returns:
-        ContextResponse object
-    """
-    # Extract fields with defaults
-    summary = llm_response.get("summary", "No summary available")
-    
-    decisions = []
-    for d in llm_response.get("decisions", []):
-        decisions.append(DesignDecision(
-            title=d.get("title", "Unknown decision"),
-            description=d.get("description", "No description"),
-            commits=d.get("commits", [])
-        ))
-    
-    related_files = []
-    for rf in llm_response.get("related_files", []):
-        related_files.append(RelatedFile(
-            path=rf.get("path", ""),
-            reason=rf.get("reason", "Related file")
-        ))
-    
-    weird_code_explanation = llm_response.get("weird_code_explanation")
-    
-    # Add metadata
-    metadata = {
-        "commits_analyzed": len(commits),
-        "llm_model": LLM_MODEL,
-        "has_commit_history": len(commits) > 0
-    }
-    
-    return ContextResponse(
-        summary=summary,
-        decisions=decisions,
-        related_files=related_files,
-        weird_code_explanation=weird_code_explanation,
-        metadata=metadata
-    )
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
 
 
 def create_mock_response(
@@ -334,10 +182,6 @@ def create_mock_response(
 ) -> ContextResponse:
     """
     Create a mock response when LLM is not available
-    Useful for testing without API key
-    
-    Returns:
-        ContextResponse with mock data
     """
     logger.info("Creating mock response (LLM not configured)")
     
@@ -349,8 +193,7 @@ def create_mock_response(
     
     decisions = []
     if commits:
-        # Create mock decisions from first few commits
-        for i, commit in enumerate(commits[:2]):
+        for commit in commits[:2]:
             decisions.append(DesignDecision(
                 title=f"Change in {commit['date'][:10]}",
                 description=commit['message'][:80],

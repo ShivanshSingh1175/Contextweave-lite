@@ -80,13 +80,6 @@ async def analyze_file_context(request: ContextRequest):
     
     try:
         # Step 1: Validate inputs
-        if not os.path.exists(request.repo_path):
-            logger.error(f"Repository path does not exist: {request.repo_path}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Repository path does not exist: {request.repo_path}"
-            )
-        
         if not os.path.exists(request.file_path):
             logger.error(f"File does not exist: {request.file_path}")
             raise HTTPException(
@@ -94,8 +87,14 @@ async def analyze_file_context(request: ContextRequest):
                 detail=f"File does not exist: {request.file_path}"
             )
         
-        # Step 2: Get commit history for this file
+        # Repo path is optional - if not provided or doesn't exist, we'll analyze without Git
+        if not request.repo_path or not os.path.exists(request.repo_path):
+            logger.info("Repo path not provided or doesn't exist. Analyzing file without Git history.")
+            request.repo_path = os.path.dirname(request.file_path)  # Use file's directory as fallback
+        
+        # Step 2: Try to get commit history (graceful degradation if not a Git repo)
         logger.info("Fetching commit history...")
+        commits = []
         try:
             commits = get_commit_history(
                 repo_path=request.repo_path,
@@ -106,11 +105,9 @@ async def analyze_file_context(request: ContextRequest):
             if not commits:
                 logger.warning("No commit history found for this file")
         except ValueError as e:
-            logger.error(f"Git error: {str(e)}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Not a valid Git repository: {request.repo_path}"
-            )
+            # Not a Git repository - continue without Git history
+            logger.warning(f"Git not available: {str(e)}. Continuing with file-only analysis.")
+            commits = []
         
         # Step 3: Read current file content
         logger.info("Reading file content...")
@@ -123,13 +120,22 @@ async def analyze_file_context(request: ContextRequest):
                 detail=f"Could not read file: {str(e)}"
             )
         
-        # Step 4: Compute related files (imports + co-changed files)
+        # Step 4: Compute related files (imports + co-changed files if Git available)
         logger.info("Computing related files...")
-        related_files_data = get_related_files(
-            repo_path=request.repo_path,
-            file_path=request.file_path,
-            file_content=file_content
-        )
+        try:
+            related_files_data = get_related_files(
+                repo_path=request.repo_path,
+                file_path=request.file_path,
+                file_content=file_content
+            )
+        except Exception as e:
+            # If Git operations fail, just use imports
+            logger.warning(f"Could not analyze co-changed files: {str(e)}. Using imports only.")
+            from git_utils import extract_imports
+            related_files_data = {
+                'imports': extract_imports(file_content, request.file_path),
+                'co_changed': []
+            }
         
         # Step 5: Call LLM to analyze everything
         logger.info("Calling LLM for analysis...")

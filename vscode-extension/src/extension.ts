@@ -3,13 +3,20 @@
  * Main extension entry point
  */
 import * as vscode from 'vscode';
+import { BackendManager } from './backendManager';
 import { SidebarProvider } from './sidebarProvider';
 import { analyzeFile } from './apiClient';
 
 let sidebarProvider: SidebarProvider;
+let backendManager: BackendManager;
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     console.log('ContextWeave Lite extension activated');
+
+    // Start backend
+    backendManager = new BackendManager(context);
+    // Don't await this so extension activation isn't blocked, but fire it off
+    backendManager.start().catch(err => console.error(err));
 
     // Register sidebar provider
     sidebarProvider = new SidebarProvider(context.extensionUri);
@@ -33,7 +40,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 async function handleExplainFile() {
     const editor = vscode.window.activeTextEditor;
-    
+
     if (!editor) {
         vscode.window.showErrorMessage('ContextWeave: No active file to analyze. Please open a file first.');
         return;
@@ -51,8 +58,8 @@ async function handleExplainFile() {
 
     // Get selected code if any
     const selection = editor.selection;
-    const selectedCode = !selection.isEmpty 
-        ? editor.document.getText(selection) 
+    const selectedCode = !selection.isEmpty
+        ? editor.document.getText(selection)
         : undefined;
 
     // Show sidebar
@@ -81,10 +88,10 @@ async function handleExplainFile() {
 
     } catch (error: any) {
         console.error('Error analyzing file:', error);
-        
+
         let errorMessage = 'Failed to analyze file';
         let suggestions: string[] = [];
-        
+
         if (error.code === 'ECONNREFUSED') {
             errorMessage = `Cannot connect to backend server at ${getBackendUrl()}`;
             suggestions = [
@@ -103,7 +110,7 @@ async function handleExplainFile() {
             // Backend returned an error
             const status = error.response.status;
             const detail = error.response.data?.detail || error.response.statusText;
-            
+
             if (status === 400) {
                 errorMessage = `Invalid request: ${detail}`;
                 suggestions = [
@@ -126,12 +133,12 @@ async function handleExplainFile() {
         }
 
         // Show error in VS Code notification
-        const fullMessage = suggestions.length > 0 
+        const fullMessage = suggestions.length > 0
             ? `${errorMessage}\n\nSuggestions:\n${suggestions.map(s => `• ${s}`).join('\n')}`
             : errorMessage;
-        
+
         vscode.window.showErrorMessage(`ContextWeave: ${errorMessage}`);
-        
+
         // Show error in sidebar with suggestions
         sidebarProvider.showError(errorMessage, suggestions);
     }
@@ -144,4 +151,7 @@ function getBackendUrl(): string {
 
 export function deactivate() {
     console.log('ContextWeave Lite extension deactivated');
+    if (backendManager) {
+        backendManager.stop();
+    }
 }
