@@ -133,7 +133,20 @@ LLM analyzes selected code in context of surrounding code and commit history to 
 
 ---
 
-### 5. Zero-Configuration Backend
+### 5. Multi-Provider LLM Support
+
+**Description:**  
+Supports multiple LLM providers: Groq (cloud), Ollama (local), and LocalAI (local). Users can switch between providers based on privacy, speed, and cost requirements.
+
+**Why Important:**  
+Privacy-conscious users need local AI options. Students and developers in India may have limited internet or API budgets. Flexibility in provider choice ensures accessibility for all user segments.
+
+**Implementation:**  
+Provider abstraction layer with factory pattern. Each provider implements common interface. Configuration via environment variables or VS Code settings.
+
+---
+
+### 6. Zero-Configuration Backend
 
 **Description:**  
 VS Code extension automatically spawns and manages Python backend process. No manual setup required.
@@ -219,14 +232,16 @@ System shall identify files that frequently change together with target file.
 ### FR-5: LLM Integration
 
 **Requirement:**  
-System shall call external LLM API with structured prompts and parse JSON responses.
+System shall support multiple LLM providers (Groq, Ollama, LocalAI) and call APIs with structured prompts.
 
 **Behavior:**
+- Support provider selection via configuration
 - Build prompts with file content, commit history, related files
 - Use instructor library for guaranteed valid JSON
 - Implement token-aware truncation (max 6000 tokens)
 - Handle API failures gracefully (fallback to mock mode)
 - Retry on transient errors (max 2 retries)
+- Detect local server availability (Ollama, LocalAI)
 
 ---
 
@@ -353,7 +368,8 @@ System shall analyze files even when Git is unavailable, falling back to file-on
 - Requires Python 3.11+ installed locally
 - Requires Node.js 18+ for extension development
 - Requires VS Code 1.85+ as host environment
-- Requires internet connection for LLM API calls
+- Requires internet connection for cloud LLM API calls (Groq)
+- Local AI options (Ollama, LocalAI) work offline but require 8-16GB RAM
 
 **Platform:**
 - Supports Windows, macOS, Linux

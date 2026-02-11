@@ -100,11 +100,11 @@ async function handleExplainFile() {
                 'Verify no firewall is blocking localhost:8000'
             ];
         } else if (error.code === 'ETIMEDOUT') {
-            errorMessage = 'Request timed out after 30 seconds';
+            errorMessage = 'Request timed out after 60 seconds';
             suggestions = [
+                'Local LLMs can be slow on first run',
                 'The file or repository might be too large',
-                'Check your internet connection (LLM API requires internet)',
-                'Try again with a smaller file'
+                'Try again with a smaller file or faster model'
             ];
         } else if (error.response) {
             // Backend returned an error
@@ -117,6 +117,13 @@ async function handleExplainFile() {
                     'Make sure the file is in a Git repository',
                     'Check that the file exists and is tracked by Git',
                     'Try running: git status'
+                ];
+            } else if (status === 503) {
+                errorMessage = `Service unavailable: ${detail}`;
+                suggestions = [
+                    'If using Ollama: Start with "ollama serve" then "ollama pull llama3"',
+                    'If using LocalAI: Start with "docker run -p 8080:8080 localai/localai"',
+                    'Or switch to Groq in settings and configure LLM_API_KEY in backend/.env'
                 ];
             } else if (status === 500) {
                 errorMessage = `Backend error: ${detail}`;

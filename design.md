@@ -17,8 +17,8 @@ ContextWeave Lite is a three-tier system consisting of a VS Code extension front
 - VS Code Extension (TypeScript) - User interface and command handling
 - FastAPI Backend (Python) - API orchestration and business logic
 - Git Analysis Layer (Python) - Deterministic data extraction
-- LLM Integration Layer (Python) - AI-powered interpretation
-- External LLM Service (Groq) - Natural language processing
+- LLM Integration Layer (Python) - AI-powered interpretation with multi-provider support
+- External LLM Service - Groq (cloud), Ollama (local), or LocalAI (local)
 
 **Design Principles:**
 - Separation of concerns (deterministic vs AI layers)
@@ -88,10 +88,12 @@ ContextWeave Lite is a three-tier system consisting of a VS Code extension front
                      │ JSON: {model, messages, response_model}
                      ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    External LLM Service                         │
-│                    Groq Cloud API                               │
-│                    Model: llama-3.1-8b-instant                  │
-│                    Context: 8,192 tokens                        │
+│                    External LLM Services                        │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐ │
+│  │  Groq Cloud API  │  │  Ollama (Local)  │  │LocalAI (Local│ │
+│  │  llama-3.1-8b    │  │  llama3/mistral  │  │  GGUF models │ │
+│  │  8,192 tokens    │  │  Offline         │  │  Offline     │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -196,14 +198,16 @@ Pure data extraction with no interpretation ensures:
 
 ### 4. LLM Integration Layer (AI-Powered)
 
-**Name:** LLM Client Module
+**Name:** LLM Client Module with Multi-Provider Support
 
 **Responsibilities:**
+- Manage multiple LLM providers (Groq, Ollama, LocalAI)
 - Build structured prompts from Git data
 - Truncate content based on token limits
-- Call external LLM API with retry logic
+- Call LLM APIs with retry logic
 - Parse and validate JSON responses
 - Provide mock responses when LLM unavailable
+- Detect local server availability
 
 **Technologies:**
 - OpenAI SDK 1.12.0
@@ -211,11 +215,19 @@ Pure data extraction with no interpretation ensures:
 - Tiktoken 0.5.2 (token counting)
 - httpx 0.26.0 (async HTTP)
 
+**Provider Architecture:**
+- base_provider.py - Abstract base class
+- groq_provider.py - Cloud LLM (Groq API)
+- ollama_provider.py - Local LLM (Ollama)
+- localai_provider.py - Local LLM (LocalAI)
+- provider_factory.py - Provider selection logic
+
 **Key Functions:**
 - analyze_file_with_llm() - Main entry point
 - build_messages() - Construct chat messages
 - truncate_content_tokens() - Token-aware truncation
 - create_mock_response() - Fallback when LLM unavailable
+- get_provider() - Factory method for provider selection
 
 **Prompt Engineering:**
 - System prompt defines role and output format
@@ -330,9 +342,19 @@ Sidebar Provider (sidebarProvider.ts):
 ### LLM Architecture
 
 **Model Selection:**
-- Primary: Groq llama-3.1-8b-instant
-- Rationale: Fast inference (< 2s), good code understanding, free tier
-- Alternatives: OpenAI GPT-3.5-turbo, GPT-4, AWS Bedrock Claude
+- Cloud: Groq llama-3.1-8b-instant
+- Local: Ollama (llama3, mistral, codellama)
+- Local: LocalAI (any GGUF model)
+- Rationale: Flexibility for privacy, speed, and cost requirements
+- Provider abstraction allows easy switching
+
+**Provider Comparison:**
+
+| Provider | Speed | Privacy | Cost | Internet | RAM |
+|----------|-------|---------|------|----------|-----|
+| Groq | 2-3s | Low | Free tier | Required | ~50MB |
+| Ollama | 5-15s | High | Free | Not required | 4-8GB |
+| LocalAI | 8-20s | High | Free | Not required | 4-8GB |
 
 **Input Processing:**
 ```
@@ -687,9 +709,10 @@ Solutions:
 - May fail if environment broken
 
 **Internet Dependency:**
-- Requires internet for LLM API
-- Fails if API unavailable
-- Subject to API rate limits
+- Cloud providers (Groq) require internet
+- Local providers (Ollama, LocalAI) work offline
+- Fails if cloud API unavailable and no local provider configured
+- Subject to API rate limits (cloud only)
 
 **Resource Usage:**
 - Backend uses ~150 MB RAM

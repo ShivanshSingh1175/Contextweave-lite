@@ -33,6 +33,8 @@ Developers right-click a file, run one command, and get AI-generated insights in
 - **Design Decision Extraction:** Identifies architectural choices from Git history with commit evidence
 - **Smart File Recommendations:** Suggests related files based on imports and temporal co-change patterns
 - **Code Snippet Explanation:** Explains unusual code patterns using Git history context
+- **Multi-Provider LLM Support:** Choose between cloud (Groq) or local AI (Ollama, LocalAI)
+- **Privacy-First Local AI:** Run analysis completely offline with no data sharing
 - **Zero-Configuration Backend:** Automatically spawns and manages Python backend process
 - **Graceful Degradation:** Works on any file, even without Git repository
 - **Responsible AI:** Clear labeling, source attribution, uncertainty handling
@@ -54,7 +56,9 @@ Developers right-click a file, run one command, and get AI-generated insights in
 - Tiktoken 0.5.2 (token-aware truncation)
 
 **AI/LLM:**
-- Groq llama-3.1-8b-instant
+- Groq llama-3.1-8b-instant (cloud)
+- Ollama (local, privacy-first)
+- LocalAI (local, privacy-first)
 - OpenAI-compatible API
 - Pydantic models for type safety
 
@@ -101,7 +105,10 @@ This directly supports the "AI for Learning & Developer Productivity" theme by u
 - Python 3.11+
 - Node.js 18+
 - VS Code 1.85+
-- Groq API key (free at console.groq.com)
+- **Choose one**:
+  - Groq API key (free at console.groq.com) for cloud AI
+  - Ollama (ollama.ai) for local AI
+  - LocalAI (localai.io) for local AI
 
 ### Backend Setup
 
@@ -110,13 +117,33 @@ cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
+### LLM Provider Setup
+
+**Option A: Local AI (Privacy-First, Recommended)**
+
+```bash
+# Install and start Ollama
+ollama serve
+ollama pull llama3
+
+# No API key needed!
+# Configure in VS Code: Set llmProvider to "ollama"
+```
+
+**Option B: Cloud AI (Groq)**
+
+```bash
 # Configure API key
 cp .env.example .env
 # Edit .env: LLM_API_KEY=your-groq-key-here
+# LLM_PROVIDER=groq
 
 python main.py
 ```
+
+See [backend/LOCAL_AI_SETUP.md](backend/LOCAL_AI_SETUP.md) for detailed setup instructions.
 
 ### Extension Setup
 
@@ -171,14 +198,27 @@ Without AI, the product degrades into a raw commit browser. With AI, it provides
 
 **Backend (.env):**
 ```bash
+# LLM Provider (groq, ollama, or localai)
+LLM_PROVIDER=ollama
+
+# For Groq (cloud)
 LLM_API_KEY=your-groq-api-key
 LLM_API_BASE=https://api.groq.com/openai/v1
 LLM_MODEL=llama-3.1-8b-instant
+
+# For Ollama (local) - no API key needed
+# Just run: ollama serve
+
+# For LocalAI (local) - no API key needed
+# Just run: docker run -p 8080:8080 localai/localai
 ```
 
 **VS Code Settings:**
 - contextweave.backendUrl - Backend URL (default: http://localhost:8000)
 - contextweave.commitLimit - Max commits to analyze (default: 50)
+- contextweave.llmProvider - Provider: groq, ollama, or localai
+- contextweave.ollamaModel - Ollama model name (default: llama3)
+- contextweave.localaiModel - LocalAI model name
 
 ---
 
@@ -186,9 +226,10 @@ LLM_MODEL=llama-3.1-8b-instant
 
 - Single repository at a time
 - File-level analysis only (no cross-file architecture)
-- Requires internet for LLM API calls
+- Requires internet for cloud LLM API calls (not needed for local AI)
 - Text files only (no binaries)
 - Best results with meaningful commit history
+- Local AI requires 8-16GB RAM and is slower than cloud AI
 
 ---
 

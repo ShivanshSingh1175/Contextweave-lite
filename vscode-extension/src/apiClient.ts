@@ -35,19 +35,34 @@ export async function analyzeFile(
     const config = vscode.workspace.getConfiguration('contextweave');
     const backendUrl = config.get<string>('backendUrl', 'http://localhost:8000');
     const commitLimit = config.get<number>('commitLimit', 50);
+    const llmProvider = config.get<string>('llmProvider', 'groq');
+    const ollamaModel = config.get<string>('ollamaModel', 'llama3');
+    const localaiModel = config.get<string>('localaiModel', 'gpt-3.5-turbo');
+
+    // Determine which model to use based on provider
+    let llmModel: string | undefined;
+    if (llmProvider === 'ollama') {
+        llmModel = ollamaModel;
+    } else if (llmProvider === 'localai') {
+        llmModel = localaiModel;
+    }
 
     const requestBody = {
         repo_path: repoPath,
         file_path: filePath,
         selected_code: selectedCode || null,
-        commit_limit: commitLimit
+        commit_limit: commitLimit,
+        llm_provider: llmProvider,
+        llm_model: llmModel
     };
 
     console.log(`API Request to ${backendUrl}/context/file:`, {
         repo_path: repoPath,
         file_path: filePath,
         has_selected_code: !!selectedCode,
-        commit_limit: commitLimit
+        commit_limit: commitLimit,
+        llm_provider: llmProvider,
+        llm_model: llmModel
     });
 
     try {
@@ -55,7 +70,7 @@ export async function analyzeFile(
             `${backendUrl}/context/file`,
             requestBody,
             {
-                timeout: 30000, // 30 second timeout
+                timeout: 60000, // 60 second timeout for local LLMs
                 headers: {
                     'Content-Type': 'application/json'
                 },

@@ -11,6 +11,8 @@ class ContextRequest(BaseModel):
     file_path: str = Field(..., description="Absolute path to the file to analyze")
     selected_code: Optional[str] = Field(None, description="Optional selected code snippet to explain")
     commit_limit: int = Field(50, description="Maximum number of commits to analyze", ge=1, le=100)
+    llm_provider: Optional[str] = Field(None, description="LLM provider to use (groq, ollama, localai)")
+    llm_model: Optional[str] = Field(None, description="Model name for the selected provider")
 
 
 class DesignDecision(BaseModel):

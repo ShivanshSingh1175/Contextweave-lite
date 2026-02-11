@@ -16,7 +16,7 @@ env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 from git_utils import get_commit_history, get_related_files, read_file_content
-from llm_client import analyze_file_with_llm
+from llm.provider_factory import get_llm_provider, get_available_providers
 from schemas import ContextRequest, ContextResponse
 
 # Configure logging
@@ -55,13 +55,15 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Detailed health check including LLM API connectivity"""
-    llm_api_key = os.getenv("LLM_API_KEY", "")
+    """Detailed health check including LLM provider availability"""
+    provider_name = os.getenv("LLM_PROVIDER", "groq")
+    available_providers = get_available_providers()
     
     return {
         "status": "healthy",
-        "llm_configured": bool(llm_api_key),
-        "version": "0.1.0"
+        "version": "0.1.0",
+        "llm_provider": provider_name,
+        "available_providers": available_providers
     }
 
 
@@ -137,9 +139,31 @@ async def analyze_file_context(request: ContextRequest):
                 'co_changed': []
             }
         
-        # Step 5: Call LLM to analyze everything
-        logger.info("Calling LLM for analysis...")
-        response = await analyze_file_with_llm(
+        # Step 5: Get LLM provider and analyze
+        logger.info("Initializing LLM provider...")
+        provider_config = {}
+        if request.llm_model:
+            provider_config['model'] = request.llm_model
+        
+        provider = get_llm_provider(
+            provider_name=request.llm_provider,
+            config=provider_config
+        )
+        
+        logger.info(f"Using LLM provider: {provider.get_provider_name()}")
+        
+        # Check if provider is available
+        if not provider.is_available():
+            logger.warning(f"Provider {provider.get_provider_name()} is not available")
+            if provider.get_provider_name() in ["ollama", "localai"]:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Local LLM server not running. Please start {provider.get_provider_name().title()}."
+                )
+        
+        # Call provider to analyze
+        logger.info("Calling LLM provider for analysis...")
+        response = await provider.generate(
             file_path=request.file_path,
             file_content=file_content,
             commits=commits,
