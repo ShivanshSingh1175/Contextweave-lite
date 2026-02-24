@@ -88,6 +88,9 @@ async def chat_tutor(request: ChatRequest):
     Context-aware tutoring chat
     """
     try:
+        # Debug logging
+        print("DEBUG REQUEST:", request.dict())
+        
         # Validate messages - return helpful response instead of error
         if not request.messages or len(request.messages) == 0:
             return ChatResponse(
@@ -130,6 +133,9 @@ async def chat_tutor(request: ChatRequest):
             temperature=0.7,
             max_tokens=500
         )
+        
+        # Debug logging
+        print("DEBUG LLM RESPONSE:", response[:200] if response else "None")
         
         # Detect if student is asking for full solution
         user_message = request.messages[-1].content.lower()

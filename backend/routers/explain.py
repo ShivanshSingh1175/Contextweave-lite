@@ -120,6 +120,9 @@ async def explain_code(request: ExplainRequest):
     Provide progressive hints for code understanding
     """
     try:
+        # Debug logging
+        print("DEBUG REQUEST:", request.dict())
+        
         # Guard against empty code - return helpful message instead of error
         if not request.code or not request.code.strip():
             return ExplainResponse(
@@ -149,6 +152,9 @@ async def explain_code(request: ExplainRequest):
             temperature=0.3,
             max_tokens=800
         )
+        
+        # Debug logging
+        print("DEBUG LLM RESPONSE:", response[:200] if response else "None")
         
         # Parse response with robust error handling
         import json

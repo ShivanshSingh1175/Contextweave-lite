@@ -74,6 +74,9 @@ async def evaluate_lab(request: EvaluateRequest):
     Evaluate student lab submission against rubric
     """
     try:
+        # Debug logging
+        print("DEBUG REQUEST:", request.dict())
+        
         # Validate inputs - return helpful response instead of error
         if not request.files or len(request.files) == 0:
             return EvaluateResponse(
@@ -115,6 +118,9 @@ async def evaluate_lab(request: EvaluateRequest):
             temperature=0.2,
             max_tokens=1500
         )
+        
+        # Debug logging
+        print("DEBUG LLM RESPONSE:", response[:200] if response else "None")
         
         # Parse response with robust error handling
         import json
