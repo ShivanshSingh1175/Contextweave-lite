@@ -1,8 +1,8 @@
 {
-  "name": "contextweave-lite",
-  "displayName": "ContextWeave Lite",
-  "description": "AI-powered code context assistant that analyzes Git history to help you understand codebases faster",
-  "version": "0.1.0",
+  "name": "contextweave-coach",
+  "displayName": "ContextWeave Coach",
+  "description": "AI-powered code learning coach with progressive hints, mastery tracking, and multilingual support",
+  "version": "0.2.0",
   "publisher": "contextweave",
   "icon": "resources/icon.png",
   "repository": {
@@ -20,14 +20,20 @@
   "keywords": [
     "ai",
     "code analysis",
-    "git history",
-    "documentation",
     "learning",
-    "llm",
-    "local ai"
+    "hints",
+    "mastery tracking",
+    "spaced repetition",
+    "multilingual",
+    "hindi"
   ],
   "activationEvents": [
-    "onCommand:contextweave.explainFile"
+    "onCommand:contextweave.explainFile",
+    "onCommand:contextweave.explainSelection",
+    "onCommand:contextweave.evaluateLab",
+    "onCommand:contextweave.toggleExamMode",
+    "onCommand:contextweave.openTutorChat",
+    "onView:contextweave.masteryView"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -35,13 +41,37 @@
       {
         "command": "contextweave.explainFile",
         "title": "ContextWeave: Explain this file"
+      },
+      {
+        "command": "contextweave.explainSelection",
+        "title": "ContextWeave: Explain Selection (Progressive Hints)"
+      },
+      {
+        "command": "contextweave.evaluateLab",
+        "title": "ContextWeave: Evaluate Current Lab"
+      },
+      {
+        "command": "contextweave.toggleExamMode",
+        "title": "ContextWeave: Toggle Exam Mode"
+      },
+      {
+        "command": "contextweave.showMastery",
+        "title": "ContextWeave: Show Mastery Sidebar"
+      },
+      {
+        "command": "contextweave.whatToReview",
+        "title": "ContextWeave: What Should I Review Today?"
+      },
+      {
+        "command": "contextweave.openTutorChat",
+        "title": "ContextWeave: Open Tutor Chat"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
           "id": "contextweave",
-          "title": "ContextWeave",
+          "title": "ContextWeave Coach",
           "icon": "resources/icon.svg"
         }
       ]
@@ -52,16 +82,26 @@
           "type": "webview",
           "id": "contextweave.sidebarView",
           "name": "File Context"
+        },
+        {
+          "type": "webview",
+          "id": "contextweave.masteryView",
+          "name": "Mastery Tracker"
         }
       ]
     },
     "configuration": {
-      "title": "ContextWeave",
+      "title": "ContextWeave Coach",
       "properties": {
+        "contextweave.apiBaseUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Base URL of the ContextWeave Coach backend API"
+        },
         "contextweave.backendUrl": {
           "type": "string",
           "default": "http://localhost:8000",
-          "description": "URL of the ContextWeave backend server"
+          "description": "URL of the ContextWeave backend server (legacy)"
         },
         "contextweave.commitLimit": {
           "type": "number",
@@ -69,6 +109,26 @@
           "description": "Maximum number of commits to analyze",
           "minimum": 1,
           "maximum": 100
+        },
+        "contextweave.language": {
+          "type": "string",
+          "default": "en",
+          "enum": ["en", "hi"],
+          "enumDescriptions": [
+            "English",
+            "Hindi (हिंदी)"
+          ],
+          "description": "Language for explanations and hints"
+        },
+        "contextweave.examMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable exam mode (restricts hints to Level 1 only for fair assessment)"
+        },
+        "contextweave.autoTrackMastery": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically track mastery when using hints"
         },
         "contextweave.llmProvider": {
           "type": "string",

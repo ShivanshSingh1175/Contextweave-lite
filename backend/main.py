@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="ContextWeave Lite API",
-    description="AI-powered code context and history analysis",
-    version="0.1.0"
+    title="ContextWeave Coach API",
+    description="AI-powered code learning coach with progressive hints and mastery tracking",
+    version="0.2.0"
 )
 
 # Add CORS middleware to allow VS Code extension to call the API
@@ -42,14 +42,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include new routers
+from routers import explain, labs, chat
+app.include_router(explain.router)
+app.include_router(labs.router)
+app.include_router(chat.router)
+
 
 @app.get("/")
 async def root():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "service": "ContextWeave Lite API",
-        "version": "0.1.0"
+        "service": "ContextWeave Coach API",
+        "version": "0.2.0",
+        "features": ["progressive-hints", "mastery-tracking", "lab-evaluation", "multilingual"]
     }
 
 

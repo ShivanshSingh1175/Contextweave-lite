@@ -1,0 +1,18 @@
+{
+  "criteria": {
+    "correctness": 30,
+    "edge_cases": 20,
+    "time_complexity": 15,
+    "code_style": 15,
+    "documentation": 10,
+    "tests": 10
+  },
+  "descriptions": {
+    "correctness": "Does the code produce correct output for valid inputs?",
+    "edge_cases": "Does the code handle edge cases (empty arrays, null values, boundary conditions)?",
+    "time_complexity": "Is the time complexity optimal? Is there a clear explanation of the algorithm's efficiency?",
+    "code_style": "Does the code follow good naming conventions, proper indentation, and clean structure?",
+    "documentation": "Are functions documented with docstrings/comments explaining purpose and parameters?",
+    "tests": "Are there test cases covering normal and edge cases?"
+  }
+}

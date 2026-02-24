@@ -1,24 +1,40 @@
 /**
- * ContextWeave Lite - VS Code Extension
- * Main extension entry point
+ * ContextWeave Coach - VS Code Extension
+ * Main extension entry point with progressive hints and mastery tracking
  */
 import * as vscode from 'vscode';
 import { BackendManager } from './backendManager';
 import { SidebarProvider } from './sidebarProvider';
 import { analyzeFile } from './apiClient';
+import { MasteryManager } from './storage/masteryManager';
+import { MasteryViewProvider } from './webviews/MasteryViewProvider';
+import { TutorChatPanel } from './webviews/TutorChatPanel';
+import { ExplainCommand } from './commands/explainCommand';
+import { EvaluateLabCommand } from './commands/evaluateLabCommand';
+import { ExamModeCommand } from './commands/examModeCommand';
+import { ReviewCommand } from './commands/reviewCommand';
 
 let sidebarProvider: SidebarProvider;
 let backendManager: BackendManager;
+let masteryManager: MasteryManager;
+let masteryViewProvider: MasteryViewProvider;
+let examModeCommand: ExamModeCommand;
 
 export async function activate(context: vscode.ExtensionContext) {
-    console.log('ContextWeave Lite extension activated');
+    console.log('ContextWeave Coach extension activated');
 
     // Start backend
     backendManager = new BackendManager(context);
-    // Don't await this so extension activation isn't blocked, but fire it off
     backendManager.start().catch(err => console.error(err));
 
-    // Register sidebar provider
+    // Initialize mastery manager
+    masteryManager = new MasteryManager(context);
+
+    // Get backend URL
+    const config = vscode.workspace.getConfiguration('contextweave');
+    const backendUrl = config.get<string>('apiBaseUrl', 'http://localhost:8000');
+
+    // Register original sidebar provider
     sidebarProvider = new SidebarProvider(context.extensionUri);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
@@ -27,15 +43,38 @@ export async function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Register command: Explain this file
-    const explainFileCommand = vscode.commands.registerCommand(
-        'contextweave.explainFile',
-        async () => {
-            await handleExplainFile();
-        }
+    // Register mastery sidebar provider
+    masteryViewProvider = new MasteryViewProvider(context.extensionUri, masteryManager);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            MasteryViewProvider.viewType,
+            masteryViewProvider
+        )
     );
 
-    context.subscriptions.push(explainFileCommand);
+    // Initialize commands
+    const explainCommand = new ExplainCommand(masteryManager, backendUrl);
+    const evaluateLabCommand = new EvaluateLabCommand(context.extensionUri, backendUrl);
+    examModeCommand = new ExamModeCommand();
+    const reviewCommand = new ReviewCommand(masteryManager);
+
+    // Register commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand('contextweave.explainFile', handleExplainFile),
+        vscode.commands.registerCommand('contextweave.explainSelection', () => explainCommand.execute()),
+        vscode.commands.registerCommand('contextweave.evaluateLab', () => evaluateLabCommand.execute()),
+        vscode.commands.registerCommand('contextweave.toggleExamMode', () => examModeCommand.execute()),
+        vscode.commands.registerCommand('contextweave.showMastery', () => {
+            vscode.commands.executeCommand('contextweave.masteryView.focus');
+            masteryViewProvider.refresh();
+        }),
+        vscode.commands.registerCommand('contextweave.whatToReview', () => reviewCommand.execute()),
+        vscode.commands.registerCommand('contextweave.openTutorChat', () => {
+            TutorChatPanel.createOrShow(context.extensionUri, masteryManager, backendUrl);
+        })
+    );
+
+    context.subscriptions.push(examModeCommand);
 }
 
 async function handleExplainFile() {
