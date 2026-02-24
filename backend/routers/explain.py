@@ -6,14 +6,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import os
-from backend.llm.provider_factory import get_provider
+from llm.provider_factory import get_llm_provider
 
 router = APIRouter(prefix="/v1", tags=["explain"])
 
 
 class ExplainRequest(BaseModel):
-    code: str
-    level: int  # 1, 2, or 3
+    code: Optional[str] = ""
+    level: Optional[int] = 1
     lang: str = "en"  # en or hi
     file_path: Optional[str] = None
     repo_context: Optional[dict] = None
@@ -120,16 +120,25 @@ async def explain_code(request: ExplainRequest):
     Provide progressive hints for code understanding
     """
     try:
+        # Guard against empty code - return helpful message instead of error
+        if not request.code or not request.code.strip():
+            return ExplainResponse(
+                hint="Please select some code to explain.",
+                concepts=["general-programming"],
+                difficulty=1,
+                next_level_available=False
+            )
+        
         # Validate level
         if request.level not in [1, 2, 3]:
-            raise HTTPException(status_code=400, detail="Level must be 1, 2, or 3")
+            request.level = 1  # Default to level 1 instead of throwing error
         
         # Validate language
         if request.lang not in ["en", "hi"]:
-            raise HTTPException(status_code=400, detail="Language must be 'en' or 'hi'")
+            request.lang = "en"  # Default to English instead of throwing error
         
         # Get LLM provider
-        provider = get_provider()
+        provider = get_llm_provider()
         
         # Build prompt
         prompt = get_hint_prompt(request.code, request.level, request.lang, request.exam_mode)
@@ -141,14 +150,15 @@ async def explain_code(request: ExplainRequest):
             max_tokens=800
         )
         
-        # Parse response
+        # Parse response with robust error handling
         import json
         try:
             result = json.loads(response)
-        except:
-            # Fallback if LLM doesn't return valid JSON
+            if not isinstance(result, dict):
+                raise ValueError("Invalid JSON structure")
+        except Exception:
             result = {
-                "hint": response,
+                "hint": str(response),
                 "concepts": ["general-programming"],
                 "difficulty": 3
             }
@@ -170,7 +180,7 @@ async def detect_concepts(code: str, file_path: Optional[str] = None):
     Extract programming concepts from code for tagging
     """
     try:
-        provider = get_provider()
+        provider = get_llm_provider()
         
         prompt = f"""Analyze this code and extract programming concepts as tags.
 
@@ -190,13 +200,12 @@ Examples: ["recursion", "binary-search", "edge-cases", "arrays", "linked-lists"]
         import json
         try:
             concepts = json.loads(response)
-            if isinstance(concepts, list):
-                return {"concepts": concepts}
-        except:
-            pass
-        
-        # Fallback
-        return {"concepts": ["general-programming"]}
+            if not isinstance(concepts, list):
+                raise ValueError("Expected list")
+            return {"concepts": concepts}
+        except Exception:
+            # Fallback to safe default
+            return {"concepts": ["general-programming"]}
         
     except Exception as e:
         return {"concepts": ["general-programming"]}

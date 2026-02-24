@@ -4,18 +4,18 @@ Context-aware tutoring chat endpoint
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-from backend.llm.provider_factory import get_provider
+from llm.provider_factory import get_llm_provider
 
 router = APIRouter(prefix="/v1", tags=["chat"])
 
 
 class ChatMessage(BaseModel):
-    role: str  # "user" or "assistant"
-    content: str
+    role: Optional[str] = "user"  # "user" or "assistant"
+    content: Optional[str] = ""
 
 
 class ChatRequest(BaseModel):
-    messages: List[ChatMessage]
+    messages: Optional[List[ChatMessage]] = []
     context: Optional[Dict] = None  # current_file, mastery data, etc.
     exam_mode: bool = False
 
@@ -88,6 +88,20 @@ async def chat_tutor(request: ChatRequest):
     Context-aware tutoring chat
     """
     try:
+        # Validate messages - return helpful response instead of error
+        if not request.messages or len(request.messages) == 0:
+            return ChatResponse(
+                message="Hello! I'm ContextWeave Coach. How can I help you with your code today?",
+                suggested_actions=["Ask about a concept", "Request a hint", "Explain code"]
+            )
+        
+        # Validate last message has content
+        if not request.messages[-1].content or request.messages[-1].content.strip() == "":
+            return ChatResponse(
+                message="I didn't receive your message. Could you please try again?",
+                suggested_actions=["Ask a question", "Request help"]
+            )
+        
         # Build system prompt
         exam_mode_note = ""
         if request.exam_mode:
@@ -101,7 +115,7 @@ async def chat_tutor(request: ChatRequest):
         )
         
         # Get provider
-        provider = get_provider()
+        provider = get_llm_provider()
         
         # Build conversation
         conversation = f"{system_prompt}\n\n"

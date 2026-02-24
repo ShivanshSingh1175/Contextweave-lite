@@ -4,25 +4,25 @@ Lab evaluation endpoint with rubric-based scoring
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-from backend.llm.provider_factory import get_provider
+from llm.provider_factory import get_llm_provider
 
 router = APIRouter(prefix="/v1", tags=["labs"])
 
 
 class FileSubmission(BaseModel):
-    path: str
-    content: str
+    path: Optional[str] = ""
+    content: Optional[str] = ""
 
 
 class RubricCriterion(BaseModel):
-    name: str
-    weight: int  # points
-    description: str
+    name: Optional[str] = ""
+    weight: Optional[int] = 0  # points
+    description: Optional[str] = ""
 
 
 class EvaluateRequest(BaseModel):
-    files: List[FileSubmission]
-    rubric: Dict[str, int]  # {"correctness": 30, "style": 20, ...}
+    files: Optional[List[FileSubmission]] = []
+    rubric: Optional[Dict[str, int]] = {}  # {"correctness": 30, "style": 20, ...}
     rubric_descriptions: Optional[Dict[str, str]] = None
 
 
@@ -74,6 +74,21 @@ async def evaluate_lab(request: EvaluateRequest):
     Evaluate student lab submission against rubric
     """
     try:
+        # Validate inputs - return helpful response instead of error
+        if not request.files or len(request.files) == 0:
+            return EvaluateResponse(
+                rubric=[],
+                overall_score=0,
+                overall_max=0
+            )
+        
+        if not request.rubric or len(request.rubric) == 0:
+            return EvaluateResponse(
+                rubric=[],
+                overall_score=0,
+                overall_max=0
+            )
+        
         # Build rubric text
         rubric_text = ""
         for criterion, points in request.rubric.items():
@@ -86,7 +101,7 @@ async def evaluate_lab(request: EvaluateRequest):
             code_text += f"\n\nFile: {file.path}\n```\n{file.content}\n```"
         
         # Get provider
-        provider = get_provider()
+        provider = get_llm_provider()
         
         # Build prompt
         prompt = EVALUATOR_PROMPT.format(
@@ -101,14 +116,14 @@ async def evaluate_lab(request: EvaluateRequest):
             max_tokens=1500
         )
         
-        # Parse response
+        # Parse response with robust error handling
         import json
         try:
             evaluations = json.loads(response)
             if not isinstance(evaluations, list):
                 raise ValueError("Expected list")
-        except:
-            # Fallback
+        except Exception:
+            # Fallback - create safe default evaluations
             evaluations = [
                 {
                     "criterion": criterion,
@@ -124,9 +139,9 @@ async def evaluate_lab(request: EvaluateRequest):
         total_max = sum(request.rubric.values())
         
         for eval_item in evaluations:
-            criterion = eval_item["criterion"]
-            score_label = eval_item["score"]
-            feedback = eval_item["feedback"]
+            criterion = eval_item.get("criterion", "unknown")
+            score_label = eval_item.get("score", "Partial")
+            feedback = eval_item.get("feedback", "No feedback available")
             
             max_points = request.rubric.get(criterion, 0)
             

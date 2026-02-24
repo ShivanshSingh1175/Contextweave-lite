@@ -27,7 +27,6 @@ def get_commit_history(repo_path: str, file_path: str, limit: int = 50) -> List[
     Raises:
         ValueError: If repo_path is not a valid Git repository
     """
-    """
     try:
         repo = Repo(repo_path)
         logger.info(f"Opened Git repository at {repo_path}")
