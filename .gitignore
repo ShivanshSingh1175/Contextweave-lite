@@ -41,3 +41,10 @@ logs/
 
 # OS
 Thumbs.db
+
+# Documentation scratch files (keep only official docs)
+*_NOTES.md
+*_TODO.md
+*_SCRATCH.md
+TEMP_*.md
+docs/scratch/

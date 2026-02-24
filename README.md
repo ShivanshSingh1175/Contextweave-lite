@@ -1,13 +1,10 @@
 # ContextWeave Coach
 
-**AI-powered code learning system for VS Code that implements a closed learning loop: progressive hints, mastery tracking, spaced repetition, and rubric-based evaluation.**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-green.svg)](package.json)
-[![Track](https://img.shields.io/badge/track-AI%20for%20Learning-orange.svg)](https://amd-slingshot.devfolio.co)
+AI-powered code learning system for VS Code that implements a closed learning loop: progressive hints, mastery tracking, spaced repetition, and rubric-based evaluation.
 
 **Track:** AI for Bharat - AI for Learning & Developer Productivity  
-**Category:** Education Technology, Explainable AI, Multilingual Learning
+**Category:** Education Technology, Explainable AI, Multilingual Learning  
+**Status:** Production-ready prototype
 
 ---
 
@@ -24,6 +21,8 @@ Code Analysis → Progressive Hints → User Action → Mastery Update →
 Spaced Review → Exam Readiness → Improved Performance
 ```
 
+**Target Users:** CS students at Indian universities (Tier-2/Tier-3 colleges), new graduates, junior developers (0-2 years), programming instructors.
+
 ---
 
 ## Problem Statement
@@ -31,17 +30,45 @@ Spaced Review → Exam Readiness → Improved Performance
 **Target Users:**
 - Computer science students at Indian universities (Tier-2/Tier-3 colleges)
 - New graduates entering software development roles  
-- Junior developers learning new codebases
+- Junior developers (0-2 years) learning new codebases
 - Programming instructors providing feedback at scale
 
 **Current Pain Points:**
-1. **Code Anxiety:** Large, undocumented codebases create paralysis
-2. **Opaque Feedback:** Automated graders return binary pass/fail without explanation
-3. **No Mastery Visibility:** Students cannot track learning progress
-4. **AI Cheating Risk:** Existing tools provide complete solutions, undermining learning
-5. **Language Barriers:** Technical content in English creates accessibility issues
+
+1. **Code Anxiety:** Large, undocumented codebases create paralysis. Students don't know where to start or what questions to ask.
+
+2. **Opaque Feedback:** Automated graders return binary pass/fail without explaining why code fails or how to improve. Students repeat mistakes without understanding.
+
+3. **No Mastery Visibility:** Students cannot track learning progress or identify weak areas requiring review. No measurement of what they know vs. struggle with.
+
+4. **AI Cheating Risk:** Existing tools (ChatGPT, Copilot) provide complete solutions, undermining learning and creating academic integrity concerns.
+
+5. **Language Barriers:** Technical content in English creates accessibility barriers for students more comfortable in Hindi, Tamil, or other Indian languages.
+
+**Real-World Impact:**
+- New graduates at Bangalore BFSI companies spend 3+ days understanding a single payment processing file
+- Students abandon open-source contributions because codebases are too opaque
+- Junior developers break production systems due to lack of context about "weird" code patterns
+- Senior developers spend 40% of their time answering repetitive "why" questions
+- Onboarding costs companies 6-8 weeks of reduced productivity per new hire
 
 **Why "Another Code Explainer" Is Not Enough:**
+
+Existing tools fall into two insufficient categories:
+
+**Category 1: Explanation Tools (ChatGPT, Copilot)**
+- Provide answers, not learning
+- No measurement of understanding
+- No retention mechanisms
+- Encourage passive consumption
+
+**Category 2: Assessment Tools (Automated Graders)**
+- Binary pass/fail feedback
+- No guidance on improvement
+- No learning progression tracking
+- Punitive rather than educational
+
+**What's Missing: The Closed Learning Loop**
 
 Learning requires more than information delivery. It requires scaffolded discovery, measurement of understanding, retention mechanisms, transparent feedback, and integrity safeguards. ContextWeave Coach implements this complete loop, transforming code understanding from a one-time event into a measurable learning process.
 
@@ -130,13 +157,37 @@ Transparent, criterion-wise assessment:
 Three-tier architecture with clear separation of concerns:
 
 ```
-VS Code Extension (TypeScript)
-    ↓ REST API
-FastAPI Backend (Python)
-    ├─ Deterministic Analysis (Git, imports, co-changes)
-    └─ AI Interpretation (hints, concepts, evaluation)
-        ↓ HTTPS
-LLM Service (Groq/Ollama/LocalAI)
+┌─────────────────────────────────────────────────────────────────┐
+│                        VS Code IDE                              │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │         ContextWeave Extension (TypeScript)              │  │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │  │
+│  │  │   Command    │  │  API Client  │  │   Sidebar    │  │  │
+│  │  │   Handler    │─▶│   (Axios)    │  │   Webview    │  │  │
+│  │  └──────────────┘  └──────┬───────┘  └──────────────┘  │  │
+│  └────────────────────────────┼──────────────────────────────┘
+└────────────────────────────────┼──────────────────────────────┘
+                                 │ HTTP POST /v1/explain
+                                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   FastAPI Backend (Python 3.11)                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  API Layer - Request validation, orchestration, errors   │  │
+│  └──────────────────┬───────────────────────────────────────┘  │
+│  ┌──────────────────▼───────────────────────────────────────┐  │
+│  │  Git Analysis Layer - DETERMINISTIC (No AI)              │  │
+│  │  - Extract commit history, parse imports, co-changes     │  │
+│  └──────────────────┬───────────────────────────────────────┘  │
+│  ┌──────────────────▼───────────────────────────────────────┐  │
+│  │  LLM Integration - AI-POWERED (Reasoning & Generation)   │  │
+│  │  - Build prompts, call LLM, parse structured responses   │  │
+│  └──────────────────┬───────────────────────────────────────┘  │
+└────────────────────┼────────────────────────────────────────────┘
+                     │ HTTPS POST /chat/completions
+                     ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  External LLM: Groq (cloud) | Ollama (local) | LocalAI (local) │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **Design Principles:**
@@ -144,6 +195,26 @@ LLM Service (Groq/Ollama/LocalAI)
 - API-first architecture for scalability
 - Local storage for privacy
 - Graceful degradation when components unavailable
+
+**Key Components:**
+
+1. **VS Code Extension (TypeScript):** Command registration, backend process management, HTTP requests, webview rendering, error handling
+
+2. **FastAPI Backend (Python):** REST endpoints, request validation (Pydantic), orchestration, logging, error handling
+
+3. **Git Analysis Layer (Deterministic):** Extract commit history (GitPython), parse imports (regex), analyze co-changes, read file content
+
+4. **LLM Integration Layer (AI-Powered):** Build structured prompts, token-aware truncation (tiktoken), call LLM APIs (instructor + OpenAI SDK), parse responses
+
+5. **Multi-Provider LLM Support:** Groq (cloud, fast), Ollama (local, privacy), LocalAI (local, Docker-based)
+
+**API Endpoints:**
+- `POST /v1/explain` - Progressive hint generation
+- `POST /v1/labs/evaluate` - Rubric-based assessment
+- `POST /v1/chat` - Context-aware tutoring
+- `POST /v1/integrity-check` - Academic integrity analysis
+- `POST /v1/detect-concepts` - Concept extraction for tagging
+- `GET /health` - Service health and provider status
 
 ---
 
@@ -365,12 +436,71 @@ ContextWeave-Coach/
 
 ## Documentation
 
-- **README.md** - Project overview and quick start
-- **PRODUCT_SPECIFICATION.md** - Complete product specification for judges
-- **requirements.md** - Detailed product requirements document
-- **design.md** - System design and architecture
+- **README.md** (this file) - Complete project documentation
+- **PRODUCT_SPECIFICATION.md** - Detailed product specification for judges
 - **demo/README_demo.md** - 5-minute demo script
-- **IMPLEMENTATION_COMPLETE.md** - Implementation status
+
+---
+
+## Development Notes
+
+### Implementation Status
+All core features fully implemented and tested:
+- Progressive hint system (3 levels, multilingual, exam mode)
+- Mastery tracking (0-5 scoring, local storage)
+- Spaced repetition (daily/3-day/weekly scheduling)
+- Rubric-based lab evaluation
+- Academic integrity safeguards
+- Multi-provider LLM support (Groq, Ollama, LocalAI)
+
+### Backend Routers
+- `backend/routers/explain.py` - Progressive hints endpoint
+- `backend/routers/labs.py` - Lab evaluation endpoint
+- `backend/routers/chat.py` - Tutor chat endpoint
+- `backend/main.py` - FastAPI application with all routers
+
+### Frontend Commands
+All commands registered in `vscode-extension/package.json`:
+- Explain Selection (Progressive Hints)
+- Evaluate Current Lab
+- Toggle Exam Mode
+- Show Mastery Sidebar
+- What Should I Review Today?
+- Open Tutor Chat
+- Reset Mastery Data
+
+### Storage Design
+Mastery data stored locally in VS Code `globalState`:
+```json
+{
+  "topics": {
+    "binary_search": {
+      "score": 2.3,
+      "last_reviewed": "2026-02-24",
+      "hint_history": [3, 2, 3]
+    }
+  },
+  "exams": {
+    "dsa_midterm": {
+      "topics": ["arrays", "recursion", "trees"],
+      "readiness": 0.72
+    }
+  }
+}
+```
+
+### Known Issues
+- Token truncation may miss important code in very large files (>10,000 lines)
+- Commit message quality affects design decision extraction
+- Import parsing limited to Python, JavaScript, TypeScript, Java
+
+### Future Enhancements
+- Additional language support (Tamil, Telugu, Bengali)
+- Workspace indexing for faster analysis
+- Caching layer for repeated analyses
+- Chat interface for follow-up questions
+- Team collaboration features
+- Self-hosted LLM option for enterprises
 
 ---
 
